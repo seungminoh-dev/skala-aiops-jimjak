@@ -27,7 +27,7 @@ from data.features import HAICScaler
 
 LOCAL_MODEL_PATH = "serving_app/models/haic_v1.keras"
 SCALER_PATH = "serving_app/models/scaler.pkl"
-MLFLOW_MODEL_URI = "models:/HAIC_Predictor/Production"
+MODEL_NAME = "HAIC_Predictor"  # train_and_register.py의 MODEL_NAME과 같아야 한다
 
 _model_cache = None  # Lazy Loading 캐시
 
@@ -42,11 +42,11 @@ class LoadedModel:
 
     def predict_one(self, sequence: list[dict]) -> float:
         """
-        sequence: [{"close": ..., "volume": ...}, ...] 길이 SEQ_LEN, 오래된 날 -> 최근 날 순서.
+        sequence: [{"wait_min": ..., "next_seats": ...}, ...] 길이 SEQ_LEN, 오래된 편 -> 최근 편 순서.
         """
         import numpy as np
 
-        scaled = [self.scaler.transform_point(p["close"], p["volume"]) for p in sequence]
+        scaled = [self.scaler.transform_point(p["wait_min"], p["next_seats"]) for p in sequence]
         x = np.array([scaled], dtype="float32")  # (1, SEQ_LEN, 2)
         pred_scaled = float(self._keras_model.predict(x, verbose=0)[0][0])
         return self.scaler.inverse_close(pred_scaled)
@@ -62,16 +62,16 @@ def _load_from_local() -> LoadedModel:
 
 def _load_from_mlflow() -> LoadedModel:
     """
-    TODO(Day2, 핵심 실습): mlflow.tensorflow.load_model(MLFLOW_MODEL_URI) 로
-    Production 모델을 로드하도록 완성하세요.
-    힌트: train_and_register.py 에서 이미 "HAIC_Predictor" 이름으로 등록·승격까지 해두었습니다.
-
-    # import mlflow.tensorflow
-    # keras_model = mlflow.tensorflow.load_model(MLFLOW_MODEL_URI)
-    # scaler = HAICScaler.load(SCALER_PATH)  # 스케일러는 MLflow가 아니라 항상 로컬 파일에서
-    # return LoadedModel(keras_model=keras_model, scaler=scaler, version="production")
+    MLflow Model Registry의 Production 모델을 로드한다. 응답에 v1, v2처럼 레지스트리 버전 번호를
+    보여주기 위해, Production 버전 번호를 먼저 찾고 그 번호로 로드한다.
     """
-    raise NotImplementedError("_load_from_mlflow를 구현하세요 (실습 2-1)")
+    import mlflow.tensorflow
+    from mlflow.tracking import MlflowClient
+
+    mv = MlflowClient().get_latest_versions(MODEL_NAME, stages=["Production"])[0]
+    keras_model = mlflow.tensorflow.load_model(f"models:/{MODEL_NAME}/{mv.version}")
+    scaler = HAICScaler.load(SCALER_PATH)  # 스케일러는 MLflow가 아니라 항상 로컬 파일에서
+    return LoadedModel(keras_model=keras_model, scaler=scaler, version=f"v{mv.version}")
 
 
 def _load_model() -> LoadedModel:
@@ -98,4 +98,14 @@ def get_model() -> LoadedModel:
         start = time.time()
         _model_cache = _load_model()
         print(f"[lazy] model loaded in {time.time() - start:.3f}s on first request")
+    return _model_cache
+
+
+def reload_model() -> LoadedModel:
+    """
+    Day3: 재학습으로 새 버전이 Production이 되면 캐시를 새 모델로 바꾼다 (가이드 부록 1 #6).
+    새 모델을 다 불러온 뒤에 바꾸므로, 로드에 실패하면 기존 모델이 그대로 남는다.
+    """
+    global _model_cache
+    _model_cache = _load_model()
     return _model_cache
