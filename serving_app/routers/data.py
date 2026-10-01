@@ -14,13 +14,12 @@ import time
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from data.features import SEQ_LEN, load_rows
+from data.features import SEQ_LEN, load_rows, normalize_rows, REQUIRED_COLUMNS
 from data.storage import UPLOAD_DIR, latest_upload
 from serving_app.monitoring.drift_detector import WINDOW_SIZE
 
 router = APIRouter(prefix="/data")
 
-REQUIRED_COLUMNS = {"Date", "Close", "Volume"}
 MIN_ROWS = SEQ_LEN + WINDOW_SIZE  # 시퀀스 구성 + 드리프트 판정 윈도우에 필요한 최소 행 수
 
 
@@ -28,19 +27,22 @@ MIN_ROWS = SEQ_LEN + WINDOW_SIZE  # 시퀀스 구성 + 드리프트 판정 윈�
 async def upload(file: UploadFile = File(...)):
     raw = await file.read()
     try:
-        text = raw.decode("utf-8")
+        text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise HTTPException(400, "UTF-8로 인코딩된 CSV 파일만 업로드할 수 있습니다.")
 
     reader = csv.DictReader(io.StringIO(text))
-    if not REQUIRED_COLUMNS.issubset(set(reader.fieldnames or [])):
+    if not REQUIRED_COLUMNS.issubset({("landingDatetime" if c == "LandingDatetime" else c) for c in (reader.fieldnames or [])}):
         raise HTTPException(400, f"CSV에 {sorted(REQUIRED_COLUMNS)} 컬럼이 모두 있어야 합니다.")
-    rows = list(reader)
+    try:
+        rows = normalize_rows(reader)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc))
     if len(rows) < MIN_ROWS:
         raise HTTPException(400, f"최소 {MIN_ROWS}행 이상의 데이터가 필요합니다.")
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    dest = os.path.join(UPLOAD_DIR, f"haic_{int(time.time())}.csv")
+    dest = os.path.join(UPLOAD_DIR, f"jimjak_{time.time_ns()}.csv")
     with open(dest, "w", encoding="utf-8", newline="") as f:
         f.write(text)
 
@@ -55,13 +57,13 @@ def status():
         return {"exists": False}
 
     rows = load_rows(path)
-    closes = [r["Close"] for r in rows]
+    waits = [r["wait_min"] for r in rows]
     return {
         "exists": True,
         "filename": os.path.basename(path),
         "rows": len(rows),
-        "start_date": rows[0]["Date"],
-        "end_date": rows[-1]["Date"],
-        "min_close": min(closes),
-        "max_close": max(closes),
+        "start_date": min(r["landingDatetime"] for r in rows),
+        "end_date": max(r["landingDatetime"] for r in rows),
+        "min_wait_min": min(waits),
+        "max_wait_min": max(waits),
     }
