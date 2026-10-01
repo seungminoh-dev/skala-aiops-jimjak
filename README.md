@@ -6,6 +6,68 @@ SKALA 모델 서빙·AIOps 미니 프로젝트 저장소입니다.
 
 > 실습 코드는 학습 목적으로만 사용합니다.
 
+## 시나리오별 시연 가이드 (AIOps Demonstration)
+
+본 프로젝트는 수하물 대기시간 예측 모델의 배포, 모니터링, 이상 감지 및 자동 재학습 파이프라인을 검증합니다.
+
+---
+
+### Step 1. Baseline 모델 학습 및 최초 배포 (학습·배포 담당)
+1. **사용 데이터**: `data/train_normal.csv` (정상 운항 960편)
+2. **동작**:
+   - `python scripts/train_baseline_v1.py` 실행
+   - 배포 게이트 기준 검증: `MAE ≤ 5분` & 단순 평균 대비 10% 개선 통과 확인
+   - MLflow에 `v1` 모델 등록 및 서빙 컨테이너 로드 (`localhost:8080/health` -> `status: ok`, `model_version: v1`)
+
+---
+
+### Step 2. 단건 예측 및 정상 추론 테스트 (서빙 API 담당)
+1. **단건 정상 예측 (`POST /predict`)**:
+   - 직전 20편 sequence 입력 시 1초 이내 예측 응답 확인
+   - `predicted_wait_min` 출력 및 50분 초과 여부(`over_threshold: false`) 확인
+2. **입력 스키마 검증 (422 에러 테스트)**:
+   - 19편만 전달 시 `422 Unprocessable Entity` 반환 확인
+
+---
+
+### Step 3. 컨베이어 고장 시연 -> [ALERT] 일시적 이상 감지 (모니터링 담당)
+> **시나리오**: BHS 일시 고장으로 대기시간 급증(+20~40분)이 발생했으나, `event_tag`가 있어 모델을 재학습하지 않고 알림만 발생해야 함.
+
+1. **사용 데이터**: `data/bhs_failure_2w.csv`
+2. **동작**:
+   - `POST /predict/batch-test` 호출
+3. **확인 결과**:
+   - `50~53번째` 편에서 오차 급증 확인
+   - `drift_check.status`: `"alert_only"` 반환
+   - `aiops.log`에 `[ALERT]` 기록 확인, **재학습(Retrain) 미수행 검증**
+
+---
+
+### Step 4. 인력 부족 드리프트 시연 -> [WARN] -> 재학습 트리거 (모니터링 & 서빙)
+> **시나리오**: 조업 인력 부족으로 처리 속도가 30% 저하되어 오차가 지속됨. 태그가 없는 비정형 드리프트이므로 자동 재학습 파이프라인 작동.
+
+1. **사용 데이터**: `data/staff_shortage_2w.csv`
+2. **동작**:
+   - `POST /predict/batch-test` 1차 호출 -> 롤링 MAE 임계값 초과 -> `[WARN]` 1회 기록
+   - `POST /predict/batch-test` 2차 호출 -> 연속 2회 초과 확인
+3. **확인 결과**:
+   - `drift_check.status`: `"retrain_triggered"` 반환
+   - 자동 재학습(Fine-tuning 10 epoch) 시작 및 배포 기준 재검증 통과
+   - 모델 버전 자동 전환 확인: `/health` 및 `/predict` 호출 시 `model_version: "v2"` 확인
+
+---
+
+### 데이터셋 요약표
+| 파일명 | 편수 | 주요 특징 | 기대 동작 |
+| :--- | :---: | :--- | :--- |
+| `train_normal.csv` | 960편 | 정상 패턴 (평균 약 38.5분) | v1 베이스라인 모델 학습 |
+| `normal_2w.csv` | 220편 | 2주 정상 운영 배치 | `ok` (정상 판정) |
+| `bhs_failure_2w.csv` | 220편 | 50~53행 `event_tag="bhs_failure"` | `alert_only` (알림만, 재학습 X) |
+| `staff_shortage_2w.csv` | 220편 | 처리 시간 1.3배 지속 지연 (태그 없음) | 2회 연속 감지 시 `v2` 재학습 트리거 |
+| `expansion_2w.csv` | 220편 | 수취대 증설 (처리 속도 20% 단축) | 결과 로그 확인용 |
+| `terminal_open_4w.csv` | 450편 | 2주간 혼란(`terminal_open`) 후 안정화 | 결과 로그 확인용 |
+| `process_change_2w.csv` | 220편 | 처리 프로세스 변경 (변동폭 확대) | 결과 로그 확인용 |
+
 ---
 
 # HAIC 모델 서빙 및 AIOps 3일 실습 스켈레톤
