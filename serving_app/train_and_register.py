@@ -1,4 +1,5 @@
 import os
+import logging
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,26 +10,20 @@ import numpy as np
 from mlflow.tracking import MlflowClient
 from tensorflow import keras
 
-from data.features import load_rows, build_sequences, train_test_split, JimJakScaler
+from data.features import load_rows, build_sequences, train_test_split, JimJakScaler, sequence_samples
+from serving_app.deployment_gate import evaluate_gate
 from data.storage import latest_upload
 from serving_app.lstm_model import build_model
 
-# 시드 고정: LSTM 가중치 초기화가 랜덤이라 시드 없이는 실행마다 RMSE가 크게 흔들려
-# (관찰치: 2.22~5.29) 게이트($4.00) 통과 여부가 운에 좌우됩니다. numpy/tensorflow/python
-# random을 한 번에 고정해 재현 가능한 학습 결과를 보장합니다.
 SEED = 42
 keras.utils.set_random_seed(SEED)
 
-RMSE_GATE = 4.00
+logger = logging.getLogger("aiops")
 MODEL_NAME = "HAIC_Predictor"
 SCALER_PATH = "serving_app/models/scaler.pkl"
-BASE_EPOCHS = 100  # 3층 LSTM + 3년치 데이터 기준, RMSE가 안정적으로 게이트 아래로 수렴하는 지점
+BASE_EPOCHS = 100
 FINE_TUNE_EPOCHS = 10
 FINE_TUNE_LR = 1e-4  # base 학습(1e-3)보다 낮은 학습률로 살짝만 갱신
-
-
-def rmse(y_true, y_pred) -> float:
-    return float(np.sqrt(np.mean((np.array(y_true) - np.array(y_pred)) ** 2)))
 
 
 def _prepare(rows: list[dict], scaler: JimJakScaler):
@@ -40,17 +35,47 @@ def _prepare(rows: list[dict], scaler: JimJakScaler):
     return X_train, y_train_scaled, X_test, y_test
 
 
-def _register_if_gate_passed(model, run_id: str, score: float) -> dict:
-    result = {"run_id": run_id, "rmse": score, "promoted": False}
-    if score <= RMSE_GATE:
-        v = mlflow.register_model(f"runs:/{run_id}/model", MODEL_NAME)
-        MlflowClient().transition_model_version_stage(name=MODEL_NAME, version=v.version, stage="Production")
-        result["promoted"] = True
-        result["version"] = v.version
-        print(f"[GATE PASSED] rmse={score:.2f} -> {MODEL_NAME} v{v.version} promoted to Production")
-    else:
-        print(f"[GATE FAILED] rmse={score:.2f} > {RMSE_GATE} -> 배포 차단, 기존 Production 유지")
+def _predict_minutes(model, scaler, X):
+    return [scaler.inverse_wait_min(float(p)) for p in model.predict(X, verbose=0).flatten()]
+
+
+def _current_version():
+    versions = MlflowClient().search_model_versions(f"name='{MODEL_NAME}'")
+    production = [v for v in versions if v.current_stage == "Production"]
+    if len(production) > 1:
+        raise ValueError("Production 버전이 여러 개입니다. 운영 버전을 먼저 정리하세요.")
+    return production[0] if production else None
+
+
+def _validation_baseline(rows, n_train):
+    return [float(np.mean([r["wait_min"] for r in history]))
+            for history, _ in sequence_samples(rows)[n_train:]]
+
+
+def _register_if_gate_passed(model_uri: str, run_id: str, gate: dict) -> dict:
+    result = {"run_id": run_id, **gate, "promoted": False}
+    if not gate["passed"]:
+        logger.warning("[FAIL] 배포 차단: %s (MAE=%.3f, 평균=%.3f, 기존=%s)",
+                       "; ".join(gate["failed_reasons"]), gate["mae"],
+                       gate["baseline_mae"], gate["current_mae"])
+        return result
+    version = mlflow.register_model(model_uri, MODEL_NAME)
+    MlflowClient().transition_model_version_stage(
+        name=MODEL_NAME, version=version.version, stage="Production",
+        archive_existing_versions=True,
+    )
+    result.update(promoted=True, version=version.version)
+    logger.info("[OK] MAE=%.3f, Production v%s 승격", gate["mae"], version.version)
     return result
+
+
+def _log_and_register(model, X_train, run_id, gate):
+    for key in ("mae", "rmse", "baseline_mae", "current_mae"):
+        if gate[key] is not None:
+            mlflow.log_metric(key, gate[key])
+    mlflow.log_dict(gate, "deployment_gate.json")
+    model_info = mlflow.tensorflow.log_model(model, name="model", input_example=X_train[:1])
+    return _register_if_gate_passed(model_info.model_uri, run_id, gate)
 
 
 def train_and_register(csv_path: str | None = None, rows: list[dict] | None = None) -> dict:
@@ -64,19 +89,23 @@ def train_and_register(csv_path: str | None = None, rows: list[dict] | None = No
     scaler = JimJakScaler.load(SCALER_PATH)
     X_train, y_train_scaled, X_test, y_test = _prepare(rows, scaler)
 
+    current = _current_version()
+    current_preds = None
+    if current is not None:
+        current_model = mlflow.tensorflow.load_model(f"models:/{MODEL_NAME}/{current.version}")
+        current_preds = _predict_minutes(current_model, scaler, X_test)
+    baseline = _validation_baseline(rows, len(y_train_scaled))
+
     with mlflow.start_run(run_name="base-train"):
         model = build_model()
         model.fit(X_train, y_train_scaled, epochs=BASE_EPOCHS, verbose=0)
 
-        preds = [scaler.inverse_wait_min(p) for p in model.predict(X_test, verbose=0).flatten()]
-        score = rmse(y_test, preds)
+        preds = _predict_minutes(model, scaler, X_test)
+        gate = evaluate_gate(y_test, preds, baseline, current_preds)
 
         mlflow.log_param("mode", "scratch")
         mlflow.log_param("epochs", BASE_EPOCHS)
-        mlflow.log_metric("rmse", score)
-        mlflow.tensorflow.log_model(model, name="model", input_example=X_train[:1])
-
-        return _register_if_gate_passed(model, mlflow.active_run().info.run_id, score)
+        return _log_and_register(model, X_train, mlflow.active_run().info.run_id, gate)
 
 
 def fine_tune(rows: list[dict]) -> dict:
@@ -87,23 +116,27 @@ def fine_tune(rows: list[dict]) -> dict:
     scaler = JimJakScaler.load(SCALER_PATH)
     X_train, y_train_scaled, X_test, y_test = _prepare(rows, scaler)
 
-    model = mlflow.tensorflow.load_model(f"models:/{MODEL_NAME}/Production")
+    current = _current_version()
+    if current is None:
+        raise ValueError("fine-tuning을 시작할 Production 모델이 없습니다.")
+    model = mlflow.tensorflow.load_model(f"models:/{MODEL_NAME}/{current.version}")
+    # 가중치 변경하기 전에 기존 모델의 예측값 확보
+    current_preds = _predict_minutes(model, scaler, X_test)
+    baseline = _validation_baseline(rows, len(y_train_scaled))
     model.compile(optimizer=keras.optimizers.Adam(learning_rate=FINE_TUNE_LR), loss="mse")
 
     with mlflow.start_run(run_name="fine-tune"):
         model.fit(X_train, y_train_scaled, epochs=FINE_TUNE_EPOCHS, verbose=0)
 
-        preds = [scaler.inverse_wait_min(p) for p in model.predict(X_test, verbose=0).flatten()]
-        score = rmse(y_test, preds)
+        preds = _predict_minutes(model, scaler, X_test)
+        gate = evaluate_gate(y_test, preds, baseline, current_preds)
 
         mlflow.log_param("mode", "fine-tune")
         mlflow.log_param("epochs", FINE_TUNE_EPOCHS)
         mlflow.log_param("n_rows", len(rows))
-        mlflow.log_metric("rmse", score)
-        mlflow.tensorflow.log_model(model, name="model", input_example=X_train[:1])
-
-        return _register_if_gate_passed(model, mlflow.active_run().info.run_id, score)
+        return _log_and_register(model, X_train, mlflow.active_run().info.run_id, gate)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     train_and_register()
