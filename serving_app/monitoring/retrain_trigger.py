@@ -125,17 +125,12 @@ def _retrain() -> dict:
         "promoted": promoted,
         "version": f"v{result['version']}" if promoted and result.get("version") else None,
         "retrain": {
-<<<<<<< HEAD
             "ok": result.get("status") not in ("failed", "deferred"),
             "status": result.get("status"),
             "failure_code": result.get("failure_code"),
             "error": result.get("failure_reason"),
             "dataset": result.get("dataset", {}),
             "rmse": result.get("rmse"),
-=======
-            "ok": True,
-            "status": result.get("status"),
->>>>>>> main
             "passed": result.get("passed"),
             "mae": mae,
             "baseline_mae": result.get("baseline_mae"),
