@@ -123,8 +123,15 @@ export interface Latency {
   windowLabel: string
 }
 
+/**
+ * 운영 모델 준비 상태 (GET /health). ready 운영 중 · loading 아직 안 불러옴(lazy 첫 예측 전)
+ * training 운영 모델이 없어 서버가 기본 모델(v1)을 학습 중 · failed 그 학습이 실패
+ */
+export type ModelReadiness = 'ready' | 'loading' | 'training' | 'failed'
+
 export interface HealthView {
   status: ServerStatus
+  model: ModelReadiness
   /** 운영 버전 (상단 바 version-badge) */
   modelVersion: ModelVersionId
   /** 마지막 갱신 — 연결 끊김일 때 "10:52 기준" */
@@ -390,6 +397,8 @@ export interface ServerState {
   }
   health: {
     status: ServerStatus
+    /** 운영 모델 준비 상태 — 첫 실행이면 서버가 기본 모델을 학습하는 동안 training */
+    model: ModelReadiness
     lastUpdatedAt: Ymdhm
     refreshSec: number
     latency: Latency

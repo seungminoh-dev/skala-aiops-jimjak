@@ -5,6 +5,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { useTerminal } from '@/api'
 import { pageOf } from '@/app/routes'
 import { Header } from '@/components/shell/Header'
+import { ModelBanner } from '@/components/shell/ModelBanner'
 import { Sidebar } from '@/components/shell/Sidebar'
 import { AlertBanner } from '@/components/terminal/AlertBanner'
 import { EASE_OUT } from '@/lib/motion'
@@ -26,6 +27,7 @@ export function AppShell() {
         <Header page={page} />
         <AlertBanner alerts={terminal.alerts} />
         <main className="mx-auto w-full max-w-[1448px] flex-1 px-6 pt-4 pb-12 text-gray-1000">
+          <ModelBanner />
           {/* 화면을 옮기면 새 화면이 살짝 떠오르며 나타난다 */}
           <motion.div
             key={location.pathname}

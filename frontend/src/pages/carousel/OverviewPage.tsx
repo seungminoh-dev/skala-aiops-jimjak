@@ -11,7 +11,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react'
 
-import { useCarousel, useTerminal, type CarouselFlight, type CarouselView } from '@/api'
+import { useCarousel, useHealth, useTerminal, type CarouselFlight, type CarouselView } from '@/api'
 import { LIVE_CAROUSEL, PAGE_PATH } from '@/app/routes'
 import { FlightList } from '@/components/carousel/FlightList'
 import { LivePreview } from '@/components/carousel/LivePreview'
@@ -31,6 +31,7 @@ import { useCountUp } from '@/lib/useCountUp'
  */
 export function OverviewPage() {
   const carousel = useCarousel()
+  const health = useHealth()
   const terminal = useTerminal()
   const navigate = useNavigate()
   const tier = terminal.carousels.find((c) => c.live)?.tier ?? 'operating'
@@ -46,7 +47,15 @@ export function OverviewPage() {
             <span className="font-mono text-[24px] leading-8 font-semibold tracking-tight">{LIVE_CAROUSEL}</span> 수취대
           </h1>
           <p className="type-label-13 text-gray-900">
-            제1여객터미널 · 예측 모델 <span className="type-mono-13 text-gray-1000">{carousel.production}</span> 운영 중 · 오늘 완료{' '}
+            제1여객터미널 · 예측 모델{' '}
+            {health.model === 'training' || health.model === 'failed' ? (
+              '준비 중'
+            ) : (
+              <>
+                <span className="type-mono-13 text-gray-1000">{carousel.production}</span> 운영 중
+              </>
+            )}{' '}
+            · 오늘 완료{' '}
             <span className="num text-gray-1000">{carousel.stats.completedToday}</span>편
           </p>
         </div>

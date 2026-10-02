@@ -167,6 +167,7 @@ export function buildHealthView(
 ): HealthView {
   return {
     status: health.status,
+    model: health.model,
     modelVersion: production,
     lastUpdatedAt: health.lastUpdatedAt,
     refreshSec: health.refreshSec,

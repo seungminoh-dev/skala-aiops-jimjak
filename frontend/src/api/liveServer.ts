@@ -33,6 +33,7 @@ import {
   type GateRecord,
   type LogLine,
   type LogTag,
+  type ModelReadiness,
   type ModelVersion,
   type ModelVersionId,
   type PipelineRun,
@@ -269,6 +270,7 @@ function initialState(): ServerState {
     clock: { liveNow, at: null },
     health: {
       status: 'connected',
+      model: 'loading',
       lastUpdatedAt: liveNow,
       refreshSec: REFRESH_SEC,
       latency: { p50Ms: 0, p95Ms: 0, requests: 0, windowLabel: '최근 예측' },
@@ -494,6 +496,7 @@ let modelsReadAt = 0
 /** /health · /logs/latency. 연결이 안 되면 false (화면 데이터는 마지막 값을 둔다) */
 async function refreshHealth(): Promise<boolean> {
   let health: HealthBody | null = null
+  let model: ModelReadiness = 'ready'
   try {
     health = await request<HealthBody>('/health', { timeoutMs: 5_000 })
   } catch (e) {
@@ -501,14 +504,18 @@ async function refreshHealth(): Promise<boolean> {
       patch((s) => ({ ...s, health: { ...s.health, status: 'disconnected' } }))
       return false
     }
-    // 503 = 서버는 살아 있고 모델만 아직 없다 (lazy 첫 예측 전)
+    // 503 = 서버는 살아 있고 모델만 아직 없다. detail.status: not_ready(lazy 첫 예측 전) · training(첫 실행 기본 모델 학습 중) · failed
+    model = e.detail === 'training' ? 'training' : e.detail === 'failed' ? 'failed' : 'loading'
   }
+  // 기본 모델 학습이 끝나면 모델 목록을 바로 다시 읽는다 (v1 이 막 생겼다)
+  if (model === 'ready' && state.health.model !== 'ready') modelsReadAt = 0
   const latency = await request<LatencyBody>('/logs/latency', { timeoutMs: 5_000 }).catch(() => null)
   patch((s) => ({
     ...s,
     health: {
       ...s.health,
       status: 'connected',
+      model,
       lastUpdatedAt: s.clock.liveNow,
       latency: latency
         ? { p50Ms: Math.round(latency.p50_ms ?? 0), p95Ms: Math.round(latency.p95_ms ?? 0), requests: latency.total, windowLabel: `최근 ${latency.count}건` }

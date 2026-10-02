@@ -1,7 +1,7 @@
-import { ArrowCounterClockwiseIcon, PlugsConnectedIcon, PlugsIcon } from '@phosphor-icons/react'
+import { ArrowCounterClockwiseIcon, CircleNotchIcon, PlugsConnectedIcon, PlugsIcon, WarningIcon } from '@phosphor-icons/react'
 
 import { LIVE_CAROUSEL, PAGE_LABEL, scopeOf, TENANT, type PageKey } from '@/app/routes'
-import { actions, reopenAllAlerts, useDemoClock, useHealth } from '@/api'
+import { actions, reopenAllAlerts, useDemoClock, useHealth, type ModelReadiness } from '@/api'
 import { ConfirmDialog } from '@/components/app/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { fmtClock, type ServerStatus } from '@/lib/format'
@@ -52,7 +52,7 @@ export function Header({ page }: { page: PageKey }) {
         >
           <p className="type-copy-14 text-gray-900">시나리오로 쌓인 판정 기록과 닫은 알림을 비우고, 운영 모델을 처음 버전으로 되돌려 데모 시각 10:30 으로 돌아갑니다.</p>
         </ConfirmDialog>
-        <DataStatus status={health.status} />
+        <DataStatus status={health.status} model={health.model} />
       </div>
     </header>
   )
@@ -66,7 +66,21 @@ function Slash() {
   )
 }
 
-function DataStatus({ status }: { status: ServerStatus }) {
+function DataStatus({ status, model }: { status: ServerStatus; model: ModelReadiness }) {
+  if (status === 'connected' && model === 'training')
+    return (
+      <span className="flex items-center gap-1.5 type-label-13 text-amber-900">
+        <CircleNotchIcon size={16} className="animate-spin" />
+        모델 학습 중
+      </span>
+    )
+  if (status === 'connected' && model === 'failed')
+    return (
+      <span className="flex items-center gap-1.5 type-label-13 text-red-900">
+        <WarningIcon size={16} />
+        모델 없음
+      </span>
+    )
   if (status === 'connected')
     return (
       <span className="flex items-center gap-1.5 type-label-13 text-gray-900">
