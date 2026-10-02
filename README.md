@@ -1,262 +1,205 @@
-# skala-aiops-jimjak
+# 짐작 — 항공 수하물 처리 시간 예측 AIOps
 
-SKALA 모델 서빙·AIOps 미니 프로젝트 저장소입니다.
-수업에서 받은 실습 스켈레톤을 수정 없이 그대로 가져온 상태에서 시작합니다.
-아래는 원본 스켈레톤 설명입니다.
+짐작은 비행기가 착륙한 뒤 **마지막 짐이 수취대에 나오기까지 걸리는 시간**을 편마다 미리 알려 주는 서비스입니다.
+지상조업사와 공항 운영센터는 이 예측을 보고 인력과 벨트를 미리 배치합니다.
 
-> 실습 코드는 학습 목적으로만 사용합니다.
+예측은 운영 중에 틀리기 시작합니다. 인력이 줄거나, 처리 방식이 바뀌거나, 컨베이어가 멈추면 그렇습니다.
+그래서 짐작은 예측만 하지 않습니다. 예측이 어긋나는 것을 스스로 알아채고, 일시적인 사건인지 구분하고,
+다시 학습한 뒤, 검증을 통과한 모델만 바꿔 끼웁니다. 기준에는 못 미치지만 지금보다 나은 모델은 사람의 승인을 받습니다.
 
-## 시나리오별 시연 가이드 (AIOps Demonstration)
+이 저장소는 그 프로토타입입니다. 인천공항 **T1 3번 수취대(T1-03)** 한 곳에서 실제 모델이 돌고,
+터미널 지도의 나머지 36곳은 발표용 화면입니다.
 
-본 프로젝트는 수하물 대기시간 예측 모델의 배포, 모니터링, 이상 감지 및 자동 재학습 파이프라인을 검증합니다.
+| 단계 | 짐작이 하는 일 |
+|---|---|
+| 예측 | 직전 20편 기록으로 다음 편의 처리 시간을 예측 (LSTM). 도착 예정 1시간 전에 발행 |
+| 서빙 | FastAPI, 포트 **8077**. Lazy/Eager 로딩 |
+| 모델 관리 | MLflow 레지스트리(sqlite)에 버전 기록. 배포 기준(게이트)을 통과한 버전만 운영 |
+| 감시 | 최근 21편 예측의 MAE를 임계값 5분과 비교 |
+| 대응 | 사건 때문이면 알림만 / 사건 없이 2번 연속이면 재학습 → 게이트 → 자동 교체 / 지금보다 나은 불합격 후보는 승인 대기 |
+| 화면 | 관제 대시보드 — 시나리오 실행, 모니터링, 모델 승인·되돌림, 로그 |
 
----
+## 실행
 
-### Step 1. Baseline 모델 학습 및 최초 배포 (학습·배포 담당)
-1. **사용 데이터**: `data/train_normal.csv` (정상 운항 960편)
-2. **동작**:
-   - `python scripts/train_baseline_v1.py` 실행
-   - 배포 게이트 기준 검증: `MAE ≤ 5분` & 단순 평균 대비 10% 개선 통과 확인
-   - MLflow에 `v1` 모델 등록 및 서빙 컨테이너 로드 (`localhost:8080/health` -> `status: ok`, `model_version: v1`)
+Python 3.11 기준입니다. 저장소 루트에서 실행합니다.
 
----
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn serving_app.main:app --port 8077
+```
 
-### Step 2. 단건 예측 및 정상 추론 테스트 (서빙 API 담당)
-1. **단건 정상 예측 (`POST /predict`)**:
-   - 직전 20편 sequence 입력 시 1초 이내 예측 응답 확인
-   - `predicted_wait_min` 출력 및 50분 초과 여부(`over_threshold: false`) 확인
-2. **입력 스키마 검증 (422 에러 테스트)**:
-   - 19편만 전달 시 `422 Unprocessable Entity` 반환 확인
+- 대시보드: http://localhost:8077/ · API 문서: http://localhost:8077/docs
+- **처음 실행이면** 운영 모델이 아직 없습니다. 서버가 첫 예측 요청 때 기본 모델(v1)을 스스로 학습합니다(20~30초).
+  그동안 화면 위에 "기본 모델 학습 중" 안내가 뜨고 `/predict`는 503으로 답합니다. 끝나면 예측이 바로 나옵니다.
+- 미리 학습해 두려면 `python -m serving_app.initialize_model` — 학습 → 배포 기준 → MLflow 등록 → 드리프트 임계값 보정까지 합니다.
+- 포트는 **8077 하나로 통일**했습니다. 로컬 uvicorn, Docker, `scripts/simulate_drift.py`(`API_URL`), `scripts/verify_serving.py`, 프론트 개발 서버 프록시가 모두 8077을 씁니다.
+- 로컬 기본은 Lazy 모드입니다(모델을 첫 예측 때 불러옴). `LOADING_MODE=eager`로 띄우면 시작할 때 불러옵니다. Docker는 Eager가 기본입니다.
 
----
+### Docker
 
-### Step 3. 컨베이어 고장 시연 -> [ALERT] 일시적 이상 감지 (모니터링 담당)
-> **시나리오**: BHS 일시 고장으로 대기시간 급증(+20~40분)이 발생했으나, `event_tag`가 있어 모델을 재학습하지 않고 알림만 발생해야 함.
+```bash
+docker compose -f serving_app/docker-compose.yml build
+docker compose -f serving_app/docker-compose.yml run --rm init
+docker compose -f serving_app/docker-compose.yml up -d serving-app
+```
 
-1. **사용 데이터**: `data/bhs_failure_2w.csv`
-2. **동작**:
-   - `POST /predict/batch-test` 호출
-3. **확인 결과**:
-   - `50~53번째` 편에서 오차 급증 확인
-   - `drift_check.status`: `"alert_only"` 반환
-   - `aiops.log`에 `[ALERT]` 기록 확인, **재학습(Retrain) 미수행 검증**
+- http://localhost:8077/ — 컨테이너 안에서도 8077로 뜹니다. 다른 포트로 열려면 `SERVING_PORT=8090`을 앞에 붙입니다.
+- `init`은 운영 모델이 없으면 학습·등록하고 임계값을 보정합니다. 이미 있으면 불러와 검증만 합니다. 건너뛰어도 서버가 첫 실행 때 스스로 학습합니다.
+- MLflow DB·모델·업로드·로그·임계값은 `jimjak-state` 볼륨(`/state`)에 남습니다. `down -v`를 하면 모두 지워집니다.
+- MLflow UI: `docker compose -f serving_app/docker-compose.yml up -d mlflow-ui` → http://localhost:5001
+- API 검증: `docker compose -f serving_app/docker-compose.yml exec serving-app python scripts/verify_serving.py`
 
----
+## 시연 순서
 
-### Step 4. 인력 부족 드리프트 시연 -> [WARN] -> 재학습 트리거 (모니터링 & 서빙)
-> **시나리오**: 조업 인력 부족으로 처리 속도가 30% 저하되어 오차가 지속됨. 태그가 없는 비정형 드리프트이므로 자동 재학습 파이프라인 작동.
+대시보드에서 진행합니다. 상단의 **초기화**는 판정 기록을 비우고 운영 모델을 v1로 되돌린 뒤 데모 시각을 10:30으로 맞춥니다.
 
-1. **사용 데이터**: `data/staff_shortage_2w.csv`
-2. **동작**:
-   - `POST /predict/batch-test` 1차 호출 -> 롤링 MAE 임계값 초과 -> `[WARN]` 1회 기록
-   - `POST /predict/batch-test` 2차 호출 -> 연속 2회 초과 확인
-3. **확인 결과**:
-   - `drift_check.status`: `"retrain_triggered"` 반환
-   - 자동 재학습(Fine-tuning 10 epoch) 시작 및 배포 기준 재검증 통과
-   - 모델 버전 자동 전환 확인: `/health` 및 `/predict` 호출 시 `model_version: "v2"` 확인
+1. **Overview** — 터미널 지도. 수취대 37곳의 상태와 확인이 필요한 곳을 봅니다. T1 3번을 누르면 들어갑니다.
+2. **T1 3번 수취대 › 개요** — 지금 하역 중인 편, 다음 편 예측(도착 1시간 전 발행), 예측 근거(앞 20편), 오늘 도착편.
+3. **시나리오** — 사건이 담긴 데이터를 넣고 AI가 어떻게 대응하는지 단계별로 봅니다. 권장 순서:
+   정상 → 컨베이어 고장(알림만) → 인력 부족 장기화 2회(재학습 → v2 자동 교체) → 처리 방식 변경 2회(승인 대기)
+4. **모델** — 승인 대기 후보를 승인하면 v3가 운영됩니다. 이전 버전으로 되돌릴 수도 있습니다.
+5. **모니터링 · 로그** — 판정 기록, 배치별 MAE, 감시 창 21편, 응답 시간, 판단마다 남은 로그.
 
----
+같은 흐름을 터미널에서 돌리려면 `python scripts/simulate_drift.py`를 실행합니다(정상 1회 → 컨베이어 고장 2회 → 인력 부족 2회).
+시나리오 하나만 보내려면 `python scripts/simulate_drift.py staff_shortage 2`, 목록은 `--list`입니다.
 
-### 데이터셋 요약표
-| 파일명 | 편수 | 주요 특징 | 기대 동작 |
-| :--- | :---: | :--- | :--- |
-| `train_normal.csv` | 960편 | 정상 패턴 (평균 약 38.5분) | v1 베이스라인 모델 학습 |
-| `normal_2w.csv` | 220편 | 2주 정상 운영 배치 | `ok` (정상 판정) |
-| `bhs_failure_2w.csv` | 220편 | 50~53행 `event_tag="bhs_failure"` | `alert_only` (알림만, 재학습 X) |
-| `staff_shortage_2w.csv` | 220편 | 처리 시간 1.3배 지속 지연 (태그 없음) | 2회 연속 감지 시 `v2` 재학습 트리거 |
-| `expansion_2w.csv` | 220편 | 수취대 증설 (처리 속도 20% 단축) | 결과 로그 확인용 |
-| `terminal_open_4w.csv` | 450편 | 2주간 혼란(`terminal_open`) 후 안정화 | 결과 로그 확인용 |
-| `process_change_2w.csv` | 220편 | 처리 프로세스 변경 (변동폭 확대) | 결과 로그 확인용 |
+## 예측 모델
 
-### 테스트
+- **입력** — 직전 20편. 칸마다 (그 편의 처리 시간, 다음 편의 좌석 수)라서 모양은 (20, 2)이고, 마지막 칸의 좌석 수는 예측할 편의 것입니다.
+- **예측 시점** — 도착 예정 1시간 전. 그때까지 마지막 짐 처리가 끝난 편만 입력에 넣습니다(아직 모르는 정보가 섞이지 않게).
+- **구조** — LSTM(32) → LSTM(32) → LSTM(16) → Dense(16, relu) → Dense(1). MSE 손실, Adam(1e-3), 100 epoch (`serving_app/lstm_model.py`).
+- **스케일러** — 버전마다 모델과 함께 저장하고 sha256으로 확인합니다. 재학습은 스케일러를 다시 맞추지 않고 이어서 학습합니다.
+- **v1 성능** — 검증 MAE 2.77분 (직전 20편 평균으로 맞히면 3.45분).
+- 예측이 50분을 넘으면 `over_threshold: true` — 인력 추가나 벨트 재배정을 검토할 시점입니다.
 
-저장소 루트에서 `tests/` 전체를 돌린다 (`tests` 는 패키지라 PYTHONPATH 를 따로 주지 않아도 된다).
+### 배포 기준 (게이트)
+
+새 모델은 아래를 모두 만족해야 운영(Production)으로 올라갑니다. 하나라도 못 넘으면 지금 모델이 그대로 운영됩니다.
+
+1. 검증 MAE 5분 이하
+2. 직전 20편 평균보다 MAE가 10% 이상 좋음
+3. 지금 운영 모델보다 MAE가 나쁘지 않음 (첫 배포는 비교 생략)
+
+## 드리프트 감시와 대응
+
+| 판정 | 조건 | 대응 |
+|---|---|---|
+| 정상 (`ok`) | 최근 21편 MAE ≤ 임계값 | 연속 횟수를 0으로 |
+| 사건 경고 (`alert_only`) | 넘었지만 창 안에 사건 표시(`event_tag`: 컨베이어 고장, 개장 초기 등)가 있음 | 알림만. 재학습하지 않고, 그 구간은 재학습 데이터에서도 뺌 |
+| 주의 (`warn`) | 사건 없이 넘음 | 연속 횟수 +1 |
+| 재학습 (`retrain_triggered`) | 사건 없는 초과가 2번 연속 | 재학습 → 게이트 → 통과하면 서빙 모델 자동 교체 |
+
+- **임계값** — 정상 데이터(`data/normal_2w.csv`)에서 잰 21편 MAE의 상위 5%(p95, v1 기준 3.97분)와 배포 기준 5분 중 큰 값, 지금은 **5.0분**입니다.
+  배포 기준보다 낮게 잡으면 기준을 통과한 모델도 평소 오차만으로 걸리기 때문입니다. 첫 학습·재학습 때 다시 잽니다(`serving_app/monitoring/drift_threshold.json`).
+- **재학습** — 처음부터가 아니라 운영 모델에서 이어서 짧게 학습합니다(fine-tune 10 epoch, 학습률 1e-4).
+  최근 14일 데이터를 쓰고 마지막 3일로 검증합니다(`data/retraining.py`).
+- **승인 대기** — 게이트는 못 넘었지만 같은 검증 데이터에서 지금 모델보다 나은 후보는 대시보드 모델 화면에서 운영자가 승인합니다(`POST /models/approve`).
+- **같은 데이터 보류** — 불합격한 데이터로는 다시 재학습하지 않습니다. 새 데이터가 올라오면 다시 시도합니다.
+- **되돌림** — 보관된 이전 버전을 운영으로 되돌릴 수 있습니다(대시보드 또는 `python -m serving_app.model_registry rollback --version 1`).
+- 모든 판단은 `logs/aiops.log`에 `[OK]` `[INFO]` `[WARN]` `[ALERT]` `[FAIL]`로 남고, 대시보드 로그 화면에서 봅니다. `/predict`가 1초를 넘으면 `[WARN]`입니다.
+
+## 데이터
+
+실제 운영 기록 대신 업무 규칙으로 만든 T1-03 편 기록입니다(`scripts/generate_data.py`).
+처리 시간 = 고정 준비 시간 21분 + 좌석 수에 비례한 하역 시간 + 앞 편이 벨트를 쓰고 있으면 밀린 시간(최대 15분) + 잡음, 최소 20분.
+
+| 파일 | 편 수 | 내용 | 평균 | 기대 동작 |
+|---|---:|---|---:|---|
+| `train_normal.csv` | 960 | 정상 운영 (8–9월) | 35.4분 | v1 학습 |
+| `normal_2w.csv` | 220 | 정상 2주 — 화면의 T1 3번 편 기록, 임계값 보정에도 씀 | 35.2분 | 정상 |
+| `bhs_failure_2w.csv` | 220 | 51–54번째 편 컨베이어 고장 +20~40분 (`event_tag=bhs_failure`) | 36.0분 | 사건 경고, 재학습 안 함 |
+| `staff_shortage_2w.csv` | 220 | 인력 부족으로 처리 시간 1.3배 (표시 없음) | 46.7분 | 2번 연속 → 재학습 → v2 |
+| `expansion_2w.csv` | 220 | 수취대 증설로 처리 시간 0.8배 | 28.2분 | 재학습 |
+| `terminal_open_4w.csv` | 450 | 개장 초기 2주 혼란 +15~30분(`terminal_open`) 뒤 안정화 0.9배 | 46.1분 | 혼란 구간은 사건 경고, 안정화 뒤 재학습 |
+| `process_change_2w.csv` | 220 | 처리 방식 변경 1.15배 + 변동 확대 | 41.1분 | 재학습 → 게이트 불합격 → 승인 대기 |
+
+컬럼: `flightId, terminalId, bagCarouselId, line_id, aircraftSubtype, seats, estimatedDatetime, LandingDatetime, bagLastTime, wait_min, event_tag`
+(`wait_min` = 착륙부터 마지막 짐까지 분). 대시보드나 `POST /data/upload`로 올린 CSV는 `data/uploads/`에 쌓이고, 재학습은 가장 최근 파일을 씁니다.
+
+## API
+
+| API | 하는 일 |
+|---|---|
+| `GET /health` | 서버·모델 상태. 모델이 없으면 503 (`not_ready` · 첫 실행 학습 중 `training` · 실패 `failed`) |
+| `POST /predict` | 직전 20편 → 다음 편 처리 시간 (`predicted_wait_min`, `over_threshold`, `model_version`). 20편이 아니면 422 |
+| `POST /predict/batch-test` | 연속된 편 41편 이상 → 슬라이딩 예측 + 드리프트 판정(`drift_check`), 필요하면 재학습 |
+| `POST /data/upload` · `GET /data/status` | 학습·재학습용 CSV 올리기 · 최근 업로드 |
+| `GET /monitoring/status` · `POST /monitoring/reset` | 임계값·연속 횟수·판정 기록 · 데모 초기화 |
+| `GET /models` | 모델 버전, 운영 버전, 게이트 기록, 승인 대기 후보 |
+| `POST /models/approve` · `POST /models/rollback` | 승인 대기 후보 승인 · 이전 버전으로 되돌림 |
+| `GET /scenarios` · `GET /scenarios/{id}/file` | 시나리오 데이터 요약 · CSV 파일 |
+| `GET /logs/events` · `GET /logs/latency` | 판단 로그 · `/predict` 응답 시간(p50·p95) |
+| `GET /logs` · `GET /logs/{filename}` | 로그 파일 목록 · 내용 |
+
+`POST /predict` 요청 예시 (칸 20개):
+
+```json
+{
+  "sequence": [
+    {"wait_min": 34, "next_seats": 189},
+    {"wait_min": 41, "next_seats": 280},
+    {"...": "18칸 더"}
+  ]
+}
+```
+
+## 화면 (frontend)
+
+React 19 · Vite · TypeScript · Tailwind CSS v4. 빌드 결과는 `serving_app/static`에 들어 있어 서버만 띄우면 `/`에서 열립니다(Node 없이도).
+화면을 고칠 때만 Node 20 이상이 필요합니다.
+
+```bash
+cd frontend
+npm install
+npm run dev
+npm run build:serve
+```
+
+`npm run dev`는 http://localhost:5173/ 에서 열리고 API를 8077로 넘깁니다. `npm run build:serve`는 `serving_app/static`을 새로 씁니다.
+디자인 원칙은 [`DESIGN.md`](DESIGN.md), 화면별 설명과 화면이 쓰는 API는 [`frontend/README.md`](frontend/README.md)에 있습니다.
+
+## 테스트
 
 ```bash
 python -m unittest discover
 ```
 
----
+`tests/` 112개 — 설정, 피처, 배포 기준, 모델 등록·되돌림, 드리프트 판정, 재학습 트리거, 임계값 보정, 첫 실행 학습, 라우터.
 
-# HAIC 모델 서빙 및 AIOps 3일 실습 스켈레톤
+Lazy와 Eager의 시작·첫 예측 시간은 `python scripts/measure_loading.py`로 잽니다(새 서버 프로세스를 띄워 측정).
+측정 예: Lazy는 0.2초 만에 뜨고 첫 예측이 약 4초, Eager는 2.9초 뒤에 뜨고 첫 예측이 0.13초. 그 뒤 예측은 둘 다 p50 약 16ms입니다. Docker는 Eager가 기본입니다.
 
-가상 종목 **HumanAI Corporation(HAIC)** 의 일별 시세로 다음날 종가를 예측하는
-**LSTM** 모델을 Day1(서빙) → Day2(MLOps) → Day3(AIOps) 순서로 하나의 서빙 서버 위에
-쌓아 올리는 실습 스켈레톤입니다. 데이터는 미리 생성해두지 않고, 대시보드에서 CSV
-파일을 업로드하는 방식으로 공급합니다 - 실전에서 "새 데이터가 들어온다"는 상황을
-그대로 흉내 낸 것입니다.
-
-완성된 전체 기능(4탭 대시보드, 운영 지표, 알람 등)을 보고 싶다면 별도로 제공되는
-**데모 패키지**(`project_answer_demo/`)를 참고하세요. 이 스켈레톤과 정답지는 실습
-난이도를 낮추기 위해 핵심 루프(업로드 → 학습/서빙 → 드리프트 감지 → 재학습)만
-남기고 나머지는 들어내 뒀습니다.
-
-## 데이터 - 대시보드에서 업로드
-
-`data/sample_haic_prices.csv`는 실제 **IBM 2007-01-03 ~ 2009-12-31** 시세를 참조해
-만든 예시 데이터(756거래일 ≈ 3년, `Date,Close,Volume` 컬럼)입니다. 상승(2007) →
-금융위기로 고점 대비 최대 -45% 폭락(2008) → 회복(2009)까지 실제 시장의 세 국면을
-모두 포함하고 있어, Day3 드리프트 감지 실습에서 "정상적인 시장 변동성" vs "이상
-드리프트"를 구분하는 근거가 뚜렷합니다.
-
-서버를 띄운 뒤 대시보드(`http://localhost:8077/`)의 업로드 카드에서 이 파일을
-그대로 올리면 됩니다. 업로드된 CSV는 `data/uploads/`에 타임스탬프 파일명으로
-쌓이고, 학습·시뮬레이션 코드는 항상 **가장 최근에 업로드된 파일**을 사용합니다
-(`data/storage.py`의 `latest_upload()`). 여러 번 업로드하면 그때마다 최신 파일로
-전환되므로, 다른 시세 CSV(같은 컬럼 형식)로 바꿔 실험해볼 수도 있습니다.
-
-## 모델 아키텍처
-
-최근 20거래일(SEQ_LEN)의 (종가, 거래량) 시퀀스를 입력받아 다음날 종가를 예측하는
-3층 LSTM입니다.
-
-```
-Input (20, 2)  ->  LSTM(32, return_sequences=True)  ->  LSTM(32, return_sequences=True)
-               ->  LSTM(16)  ->  Dense(16, relu)  ->  Dense(1)
-```
-
-3년치(~756거래일) 데이터 + SEQ_LEN(20)을 적용하면 학습 시퀀스가 약 590개까지 늘어나,
-파라미터(약 1.6만 개) 대비 샘플 비율이 충분히 확보됩니다. 그래서 층을 깊게(LSTM 3층)
-쌓았습니다 - CPU로 100 epoch을 학습해도 1분 내외면 끝납니다. (아키텍처 정의는
-`serving_app/lstm_model.py`, Day1·Day2가 공유합니다.)
-
-재학습 방식도 유의해서 보세요. Day3에서 드리프트가 감지되면 **처음부터 다시 학습하지
-않습니다.** 최근 1개월(21거래일)만으로 LSTM을 스크래치로 학습시키기엔 샘플이 너무
-적어 불안정하기 때문에, 이미 전체 데이터로 학습된 **Production 가중치에서 이어서
-(warm start) 짧게(10 epoch) fine-tuning**합니다. `serving_app/train_and_register.py`의
-`train_and_register()`(Day2, 처음부터 학습)와 `fine_tune()`(Day3, 이어서 학습)이 이 구분입니다.
-
-## 디렉토리 구조
+## 폴더 구조
 
 ```
 skala-aiops-jimjak/
-├── requirements.txt
-├── data/
-│   ├── sample_haic_prices.csv  # 대시보드에 업로드해볼 예시 데이터 (IBM 참조 3년치)
-│   ├── storage.py               # 업로드된 CSV 중 최신 파일을 찾는 latest_upload()
-│   ├── uploads/                 # 업로드된 CSV가 쌓이는 곳 (시작 시 비어 있음)
-│   └── features.py              # 시퀀스 빌더(SEQ_LEN=20) + HAICScaler (전 Day 공용)
-├── scripts/                    # 서빙 앱 밖에서 실행하는 실습/시뮬레이션 도구
-│   ├── train_baseline_v1.py    # Day1 사전 준비: MLflow 없이 로컬 baseline LSTM 생성
-│   └── simulate_drift.py       # Day3: 정상/드리프트 배치 생성 + 서버로 주입
-└── serving_app/
-    ├── main.py                     # Day1 - app 생성, 라우터 등록, 로딩 모드 분기
-    ├── schemas.py                  # Day1
-    ├── lstm_model.py                # Day1·Day2 공유 아키텍처 정의
-    ├── model_loader.py             # Day1 → Day2(MLflow 연동)
-    ├── train_and_register.py       # Day2 (base 학습) + Day3 (fine-tuning)
-    ├── Dockerfile, docker-compose.yml   # Day2 (단일 컨테이너)
-    ├── models/
-    │   ├── haic_v1.keras           # Day1 로컬 baseline 모델 (train_baseline_v1.py가 생성)
-    │   └── scaler.pkl              # Day1~3 공용 정규화 스케일러 (train_baseline_v1.py가 생성)
-    ├── routers/
-    │   ├── predict.py              # Day1 → Day3(시뮬레이션 엔드포인트 추가)
-    │   ├── health.py               # Day1
-    │   ├── data.py                 # Day2: CSV 업로드 (완성형)
-    │   └── logs.py                 # Day3: logs/aiops.log 파일 조회 (완성형)
-    ├── monitoring/                 # Day3
-    │   ├── drift_detector.py       # TODO
-    │   └── retrain_trigger.py      # TODO
-    ├── static/
-    │   └── index.html              # 실습용 대시보드 (완성형) - http://localhost:8000/
-    └── logs/                       # retrain_trigger.py의 "aiops" 로거가 쓰는 곳 (실행 시 자동 생성)
+├── data/                         팀 데이터셋(*.csv), 피처·시퀀스(features.py), 재학습 데이터 분할(retraining.py), 업로드(uploads/)
+├── scripts/
+│   ├── generate_data.py          업무 규칙으로 데이터셋 만들기
+│   ├── train_baseline_v1.py      기본 모델을 새로 학습·등록 (임계값 보정은 하지 않음)
+│   ├── simulate_drift.py         시나리오 CSV를 서버로 보내 드리프트 판정 보기
+│   ├── calibrate_drift_threshold.py  드리프트 임계값 다시 재기
+│   ├── measure_loading.py        Lazy/Eager 시간 측정
+│   └── verify_serving.py         API 동작 검증 (시연 증거)
+├── serving_app/
+│   ├── main.py                   FastAPI 앱 — 라우터, 로그, 정적 화면(/)
+│   ├── settings.json · config.py 설정 (환경 변수가 우선)
+│   ├── lstm_model.py             모델 구조
+│   ├── model_loader.py           Lazy/Eager 로딩, 운영 모델 캐시
+│   ├── model_registry.py         MLflow 버전 저장·불러오기·되돌림·내보내기
+│   ├── train_and_register.py     처음 학습(scratch)과 재학습(fine-tune), 게이트 판정, 등록
+│   ├── deployment_gate.py        배포 기준
+│   ├── initialize_model.py       운영 모델 준비 (Docker init)
+│   ├── bootstrap.py              첫 실행에 모델이 없으면 백그라운드 학습
+│   ├── monitoring/               드리프트 판정(drift_detector), 재학습 연결(retrain_trigger), 임계값 보정(calibration)
+│   ├── routers/                  predict · health · data · monitoring · models · scenarios · logs
+│   ├── static/                   화면 빌드 결과
+│   └── Dockerfile · docker-compose.yml
+├── frontend/                     관제 대시보드 소스
+├── tests/                        unittest
+└── DESIGN.md                     화면 디자인 문서
 ```
 
-`serving_app/routers/data.py`, `routers/logs.py`, `static/index.html`은 실습
-목표가 아니라 업로드·결과 확인을 위한 배관 코드라 처음부터 완성된 형태로
-제공됩니다 - 전부 방금 업로드된 파일이나 로그 파일처럼 이미 존재하는 데이터를
-읽거나 저장할 뿐, 가짜 데이터를 만들지 않습니다. 재학습 이력을 MLflow Model
-Registry API로 따로 조회하는 대신, `retrain_trigger.py`가 남기는 로그 파일을
-그대로 보여주는 쪽을 택했습니다 - 학생이 봐야 할 것은 "재학습이 실제로
-일어났다는 증거"이지 레지스트리 조회 API 설계가 아니기 때문입니다.
-
-## 실습용 대시보드
-
-`http://localhost:8077/`은 개발자 대시보드입니다.
-
-- **HAIC 데이터 업로드** - `data/sample_haic_prices.csv`(또는 같은 형식의 다른 CSV)를
-  올리면 `/data/upload`로 전송되고, 업로드 완료 여부가 그 자리에 바로 표시됩니다.
-- **드리프트 시뮬레이션** - 정상/드리프트 배치를 `/predict/batch-test`로 전송합니다.
-  `batch_test()`가 TODO인 동안은 응답이 비어 있거나 오류가 납니다.
-- **드리프트 감지 기반 재학습 파이프라인** - 감지 → fine-tuning → 재배포 단계를
-  시각화합니다. `drift_detector.py`·`retrain_trigger.py`의 TODO를 채우기 전까지는
-  단계가 진행되지 않습니다.
-- **재학습 로그** - `/logs`로 `logs/aiops.log` 파일 목록을 보여주고, 클릭하면
-  `/logs/{파일명}`으로 내용을 그대로 열어 보여줍니다. `[WARN] drift detected` →
-  `[INFO] retrain triggered` → `[OK] new_rmse=...`가 순서대로 쌓이는지 직접
-  확인하는 용도입니다.
-
-## 실습 시나리오 (Day1 → Day2 → Day3)
-
-**Day1 — HAIC 로컬 baseline LSTM을 FastAPI로 서빙**
-Lazy/Eager 로딩 비교, `/predict`·`/health` 동작 확인, `http://localhost:8077/`에서 대시보드로 확인
-
-**Day2 — Day1 서버 + MLflow 학습·레지스트리·컨테이너화**
-base 학습(scratch, 100 epoch), RMSE 게이트($4.00) 통과 버전만 Production 승격, Docker로 재현
-
-**Day3 — Day2 서버에 드리프트 감지·자동 재학습 부착**
-드리프트 주입 → fine-tuning(warm start, 10 epoch) → 자동 재배포 확인
-
-세 Day의 산출물은 독립적이지 않고 **하나의 `serving_app/`** 위에 순서대로 쌓입니다
-(`model_loader.py`가 Day1 로컬 모델 → Day2 MLflow Production 모델로 전환되는 지점이 그 연결고리입니다).
-스케일러(`scaler.pkl`)는 Day1에서 한 번 fit한 뒤 Day1~3 내내 그대로 재사용됩니다 -
-fine-tuning 시 다시 fit하면 이미 그 스케일로 학습된 기존 가중치와 어긋나기 때문입니다.
-
-## 실행 순서
-
-```bash
-pip install -r requirements.txt
-
-# --- Day1 ---
-uvicorn serving_app.main:app --host 0.0.0.0 --port 8077 # http://localhost:8077/ 대시보드, /docs 에서 API 확인
-# (lazy 모드가 기본이라 업로드된 데이터가 없어도 서버는 정상적으로 뜹니다)
-
-# 대시보드 업로드 카드에서 data/sample_haic_prices.csv 를 업로드한 뒤,
-# 별도 터미널에서:
-python scripts/train_baseline_v1.py       # 로컬 baseline LSTM + scaler.pkl 생성
-# LOADING_MODE=eager uvicorn serving_app.main:app --reload  # Eager 방식과 시작 시간 비교
-
-# --- Day2 ---
-python serving_app/train_and_register.py            # 로컬 MLflow(sqlite)에 학습 기록 + 게이트 통과 시 Production 승격
-MODEL_SOURCE=mlflow uvicorn serving_app.main:app --host 0.0.0.0 --port 8077 
-
-# --- 컨테이너로 재현 (단일 컨테이너 - MLflow도 서버 없이 컨테이너 안에서 로컬로 동작) ---
-docker compose -f serving_app/docker-compose.yml up --build
-# (샘플 데이터를 컨테이너 안에 "업로드"해 둔 뒤 베이스라인 -> MLflow 학습/등록까지
-#  이미지 빌드 시점에 전부 끝나므로, 로컬에서 미리 실행해둘 필요가 없습니다)
-
-# --- Day3 ---
-uvicorn serving_app.main:app --host 0.0.0.0 --port 8077 
-python scripts/simulate_drift.py          # 정상 배치 → 드리프트 배치 순서로 주입
-```
-
-`/predict`는 단일 값이 아니라 **최근 20거래일치 시퀀스**를 받습니다. 요청 예시:
-
-```json
-{
-  "sequence": [
-    {"close": 160.0, "volume": 1200000},
-    {"close": 160.5, "volume": 1180000},
-    { "...": "18개 더" }
-  ]
-}
-```
-
-## TODO 체크리스트 (실습생이 채워야 하는 부분)
-
-이 스켈레톤은 배관(라우팅·업로드·MLflow 학습 로직 등)은 완성되어 있고,
-**각 Day의 핵심 학습 목표에 해당하는 부분만 TODO로 비워뒀습니다.**
-
-- `serving_app/model_loader.py` → `_load_from_mlflow()`: MLflow Production 모델 로드 (Day2)
-- `serving_app/routers/predict.py` → `batch_test()`: 슬라이딩 윈도우 예측 + `recent_predictions` 누적 (Day3)
-- `serving_app/monitoring/drift_detector.py` → `compute_rmse()`: RMSE 직접 구현 (Day3)
-- `serving_app/monitoring/retrain_trigger.py` → `check_and_trigger()`: fine-tuning 트리거 연결 (Day3, 힌트: 파일 상단 주석 참고)
-- `scripts/simulate_drift.py` → `send_batch()`: `/predict/batch-test` 호출 (Day3)
-
-## 완료 기준
-
-- [ ] `/data/upload`로 CSV를 올리면 업로드 완료로 표시되는가 (`/data/status`로도 확인 가능)
-- [ ] 정상 데이터로는 RMSE $4 이내, 드리프트 데이터로는 $4 초과가 재현되는가
-- [ ] `logs/aiops.log`에 `[WARN] drift detected` → `[INFO] retrain triggered` →
-      `[OK] new_rmse=...` 순서로 기록되는가
-- [ ] 재배포 후 `/predict` 호출 시 새 Production 버전이 응답하는가
+실행하면 생기는 `mlflow.db`, `mlartifacts/`, `logs/`, `data/uploads/*`, `serving_app/models/*`는 git에 올리지 않습니다.
