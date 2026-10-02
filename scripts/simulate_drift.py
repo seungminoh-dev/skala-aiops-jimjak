@@ -70,10 +70,14 @@ def describe(check: dict) -> str:
     if check.get("event_tags"):
         plain = check.get("mae_without_events")
         parts.append(f"사건 {','.join(check['event_tags'])} {check['event_count']}편" + (f" (제외 MAE {plain}분)" if plain is not None else ""))
+    retrain = check.get("retrain")
     if check.get("promoted"):
-        parts.append(f"→ 새 모델 {check.get('version', '')} 승격")
-    elif check.get("retrain"):
-        parts.append(f"→ 재학습 결과: {check['retrain']}")
+        parts.append(f"→ 재학습 MAE {retrain['mae']:.1f}분, 새 모델 {check.get('version', '')} 승격")
+    elif retrain and retrain.get("ok"):
+        reasons = " / ".join(retrain.get("failed_reasons") or [])
+        parts.append(f"→ 재학습 MAE {retrain['mae']:.1f}분, 배포 차단 ({reasons}) - 기존 모델 유지")
+    elif retrain:
+        parts.append(f"→ 재학습 못 함: {retrain.get('error')}")
     return " | ".join(parts)
 
 
