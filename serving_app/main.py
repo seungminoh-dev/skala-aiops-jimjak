@@ -19,9 +19,9 @@ configure_aiops_logger(settings.log_dir)
 
 app = FastAPI(
     title="짐작 | 물류 최적화 AIOps API",
-    description="수하물 처리시간 예측, 모델 상태 조회, CSV 업로드와 드리프트 시연 API. "
-                "예측 단위는 분이며, 모델 버전은 실제 로딩된 버전을 반환합니다. "
-                "배치 테스트는 재학습과 Production 승격을 실행할 수 있습니다.",
+    description="지능형 공항 물류 운영을 위한 예측 기반 AIOps 플랫폼, 짐작. "
+                "수하물 처리시간 예측으로 물류 자원 배분의 의사결정을 지원하고, "
+                "운영 환경 변화에 대응하는 모델 관리 체계를 제공합니다.",
     openapi_tags=[
         {"name": "예측", "description": "단건 예측 및 정답을 포함한 드리프트 시연"},
         {"name": "모델 상태", "description": "서빙 준비 여부와 실제 모델 버전"},
