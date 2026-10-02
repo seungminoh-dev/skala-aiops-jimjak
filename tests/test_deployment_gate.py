@@ -9,6 +9,15 @@ class GateTest(unittest.TestCase):
         self.assertTrue(result['passed'])
         self.assertEqual(result['current_comparison'], 'skipped_initial_deployment')
 
+    def test_all_three_methods_record_mae_and_rmse(self):
+        result = evaluate_gate([10, 20], [12, 18], [15, 15], [13, 16])
+        self.assertEqual(result['mae'], 2)
+        self.assertEqual(result['rmse'], 2)
+        self.assertEqual(result['baseline_mae'], 5)
+        self.assertEqual(result['baseline_rmse'], 5)
+        self.assertEqual(result['current_mae'], 3.5)
+        self.assertAlmostEqual(result['current_rmse'], 12.5 ** 0.5)
+
     def test_mae_limit(self):
         result = evaluate_gate([0], [6], [10], [7])
         self.assertFalse(result['passed'])
@@ -33,7 +42,7 @@ class GateTest(unittest.TestCase):
         from serving_app import train_and_register as training
         gate = evaluate_gate([0], [6], [5])
         with patch.object(training.mlflow, 'register_model') as register, \
-                patch.object(training, 'MlflowClient') as client:
+                patch.object(training.model_registry, 'configure_tracking') as client:
             result = training._register_if_gate_passed('unused', 'test', gate)
             self.assertFalse(result['promoted'])
             register.assert_not_called()
@@ -42,8 +51,9 @@ class GateTest(unittest.TestCase):
     def test_passed_gate_promotes_and_archives_previous(self):
         from serving_app import train_and_register as training
         gate = evaluate_gate([0], [2], [5], [3])
-        with patch.object(training.mlflow, 'register_model', return_value=Mock(version='2')), \
-                patch.object(training, 'MlflowClient') as client:
+        with patch.object(training.model_registry, 'load_model_uri'), \
+                patch.object(training.mlflow, 'register_model', return_value=Mock(version='2')), \
+                patch.object(training.model_registry, 'configure_tracking') as client:
             result = training._register_if_gate_passed('models:/test', 'test', gate)
             self.assertTrue(result['promoted'])
             client.return_value.transition_model_version_stage.assert_called_once_with(
@@ -52,7 +62,7 @@ class GateTest(unittest.TestCase):
 
     def test_registry_failure_is_not_initial_deployment(self):
         from serving_app import train_and_register as training
-        with patch.object(training, 'MlflowClient') as client:
+        with patch.object(training.model_registry, 'configure_tracking') as client:
             client.return_value.search_model_versions.side_effect = RuntimeError('unavailable')
             with self.assertRaises(RuntimeError):
                 training._current_version()

@@ -1,16 +1,4 @@
-"""
-FastAPI 앱 진입점.
-
-Day1: app 생성, 라우터(predict, health) 등록, startup 이벤트에서 로딩 모드에 따라 모델 준비
-Day2: data 라우터 등록 (HAIC 데이터 업로드)
-Day3: "aiops" 로거를 logs/aiops.log 파일로 연결(로깅 설정) + logs 라우터(로그 파일 조회) 등록
-
-정적 화면: serving_app/static 은 「짐작」 프론트엔드(frontend/)의 빌드 결과입니다.
-frontend 에서 `npm run build:serve` 를 실행하면 이 폴더를 비우고 새로 채웁니다(손으로 고치지 않음).
-화면 이동은 해시(#/t1-03 등)라서 FastAPI 는 "/" 의 index.html 과 /assets/* 만 내주면 됩니다.
-API 라우터를 먼저 등록한 뒤 StaticFiles를 "/"에 마지막으로 mount해야, /predict 같은
-API 경로가 정적 파일보다 먼저 매칭됩니다(Starlette는 등록 순서대로 라우트를 검사합니다).
-"""
+"""FastAPI 앱 진입점"""
 import logging
 import os
 
@@ -18,12 +6,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from serving_app import model_loader
+from serving_app.config import settings
 from serving_app.routers import data, health, logs, predict
 
-# monitoring/retrain_trigger.py가 쓰는 "aiops" 로거를 logs/aiops.log 파일에 연결한다.
-# (routers/logs.py가 같은 디렉토리를 읽기 전용으로 노출한다.) 여기서 이 로거 하나만
-# 직접 설정하므로, uvicorn 자체 로깅 설정과 충돌하지 않는다.
-_LOG_DIR = "logs"
+_LOG_DIR = settings.log_dir
 os.makedirs(_LOG_DIR, exist_ok=True)
 _aiops_logger = logging.getLogger("aiops")
 _aiops_logger.setLevel(logging.INFO)
@@ -47,7 +33,7 @@ app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")  # 
 @app.on_event("startup")
 def startup():
     # Day1 실습 포인트: LOADING_MODE=eager 로 켜고 서버 시작 시간을 lazy와 비교해보세요.
-    if os.getenv("LOADING_MODE", "lazy") == "eager":
+    if settings.loading_mode == "eager":
         model_loader.load_eager()
     else:
         print("[lazy] 모델은 첫 /predict 요청이 들어올 때 로드됩니다.")

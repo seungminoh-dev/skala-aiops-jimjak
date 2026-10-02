@@ -1,12 +1,4 @@
-"""
-HAIC 가상 데이터 업로드 - data/generate_haic_data.py로 자동 생성하던 방식을 대체합니다.
-
-/data 폴더는 이 라우터로 업로드된 CSV만 쌓이는 곳입니다(data/uploads/). 여러 번
-업로드하면 계속 쌓이고, 학습(train_and_register.py, fine_tune 등)은 항상 가장
-최근 파일 하나를 사용합니다(data/storage.py의 latest_upload()).
-
-대시보드(static/index.html)에서 파일을 올리면 이 엔드포인트가 호출됩니다.
-"""
+"""수하물 처리 기록 CSV 업로드 및 최신 파일 상태 조회"""
 import csv
 import io
 import os
@@ -20,7 +12,7 @@ from serving_app.monitoring.drift_detector import WINDOW_SIZE
 
 router = APIRouter(prefix="/data")
 
-MIN_ROWS = SEQ_LEN + WINDOW_SIZE  # 시퀀스 구성 + 드리프트 판정 윈도우에 필요한 최소 행 수
+MIN_ROWS = SEQ_LEN + WINDOW_SIZE
 
 
 @router.post("/upload")

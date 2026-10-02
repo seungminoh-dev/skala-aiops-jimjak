@@ -1,16 +1,10 @@
-"""
-업로드된 HAIC 데이터 파일 관리.
-
-data/generate_haic_data.py로 자동 생성하던 방식 대신, 대시보드에서 CSV 파일을
-직접 업로드하는 방식으로 바뀌었습니다 (serving_app/routers/data.py 참고).
-업로드된 파일은 이 디렉터리(data/uploads/)에 타임스탬프가 붙은 이름으로 계속
-쌓이고(과거 파일을 덮어쓰지 않습니다), 학습(train_and_register.py 등)은 항상
-가장 최근에 올라온 파일 하나를 사용합니다.
-"""
+"""업로드된 HAIC 데이터 파일 관리"""
 import glob
 import os
 
-UPLOAD_DIR = "data/uploads"
+from serving_app.config import settings
+
+UPLOAD_DIR = settings.upload_dir
 
 
 def latest_upload(upload_dir: str = UPLOAD_DIR) -> str:

@@ -1,0 +1,23 @@
+{
+  "model_name": "JimJak_BagTime",
+  "experiment_name": "jimjak-bagtime",
+  "sequence_length": 20,
+  "seed": 42,
+  "base_epochs": 100,
+  "fine_tune_epochs": 10,
+  "batch_size": 32,
+  "learning_rate": 0.001,
+  "fine_tune_learning_rate": 0.0001,
+  "validation_ratio": 0.2,
+  "mae_limit": 5.0,
+  "baseline_ratio": 0.9,
+  "tracking_uri": "sqlite:///mlflow.db",
+  "artifact_root": "mlartifacts",
+  "model_source": "mlflow",
+  "loading_mode": "lazy",
+  "model_version": "",
+  "local_model_dir": "serving_app/models/v1",
+  "training_data_path": "data/train_normal.csv",
+  "upload_dir": "data/uploads",
+  "log_dir": "logs"
+}
