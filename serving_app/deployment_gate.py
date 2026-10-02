@@ -1,7 +1,9 @@
 import numpy as np
 
-MAE_LIMIT = 5.0
-BASELINE_RATIO = 0.9
+from serving_app.config import settings
+
+MAE_LIMIT = settings.mae_limit
+BASELINE_RATIO = settings.baseline_ratio
 
 
 def evaluate_gate(y_true, candidate, baseline, current=None):
@@ -19,15 +21,17 @@ def evaluate_gate(y_true, candidate, baseline, current=None):
     current_mae = float(np.mean(np.abs(actual - arrays[3]))) if current is not None else None
     failed = []
     if mae > MAE_LIMIT:
-        failed.append("MAE가 5분을 초과했습니다.")
+        failed.append(f"MAE가 {MAE_LIMIT:g}분을 초과했습니다.")
     if mae > baseline_mae * BASELINE_RATIO:
-        failed.append("직전 20편 평균 대비 MAE가 10% 이상 개선되지 않았습니다.")
+        failed.append(f"직전 {settings.sequence_length}편 평균 대비 MAE가 {(1 - BASELINE_RATIO) * 100:g}% 이상 개선되지 않았습니다.")
     if current_mae is not None and mae > current_mae:
         failed.append("현재 Production 모델보다 MAE가 높습니다.")
     return {
         "mae": mae,
         "rmse": float(np.sqrt(np.mean((actual - predicted) ** 2))),
         "baseline_mae": baseline_mae,
+        "baseline_rmse": float(np.sqrt(np.mean((actual - mean_prediction) ** 2))),
+        "current_rmse": float(np.sqrt(np.mean((actual - arrays[3]) ** 2))) if current is not None else None,
         "current_mae": current_mae,
         "passed": not failed,
         "failed_reasons": failed,

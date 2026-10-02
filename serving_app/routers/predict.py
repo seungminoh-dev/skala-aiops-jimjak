@@ -1,9 +1,3 @@
-"""
-Day1 -> Day3(시뮬레이션 엔드포인트 추가) 확장 파일.
-
-Day1: POST /predict - 최근 SEQ_LEN(20)거래일 시퀀스로 다음날 종가 예측
-Day3: POST /predict/batch-test - 드리프트 감지 시뮬레이션 시작점 (scripts/simulate_drift.py 참고)
-"""
 from fastapi import APIRouter
 
 from data.features import SEQ_LEN

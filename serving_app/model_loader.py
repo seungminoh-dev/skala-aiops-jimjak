@@ -1,17 +1,18 @@
-import os
+import json
 import time
+from pathlib import Path
 
 from data.features import JimJakScaler
+from serving_app.config import settings
+from serving_app import model_registry
 
-LOCAL_MODEL_PATH = "serving_app/models/haic_v1.keras"
-SCALER_PATH = "serving_app/models/scaler.pkl"
-MODEL_NAME = "HAIC_Predictor"  # train_and_register.py의 MODEL_NAME과 같아야 한다
+MODEL_NAME = settings.model_name
 
 _model_cache = None  # Lazy Loading 캐시
 
 
 class LoadedModel:
-    """local .keras와 mlflow 두 소스를 동일한 인터페이스로 감싸는 래퍼."""
+    """로컬 번들과 MLflow 등록 버전을 동일한 인터페이스로 감싸는 래퍼."""
 
     def __init__(self, keras_model, scaler: JimJakScaler, version: str):
         self._keras_model = keras_model
@@ -31,26 +32,30 @@ class LoadedModel:
 
 
 def _load_from_local() -> LoadedModel:
-    from tensorflow import keras
-
-    keras_model = keras.models.load_model(LOCAL_MODEL_PATH)
-    scaler = JimJakScaler.load(SCALER_PATH)
-    return LoadedModel(keras_model=keras_model, scaler=scaler, version="v1-local")
+    directory = Path(settings.local_model_dir)
+    model, scaler, metadata = model_registry.load_bundle(directory)
+    manifest = json.loads((directory / "version.json").read_text())
+    if manifest["model_name"] != MODEL_NAME or manifest["run_id"] != metadata["run_id"]:
+        raise ValueError("로컬 버전 정보가 모델 번들과 다릅니다.")
+    version = model_registry.version_string(manifest["version"])
+    if settings.model_version and version != model_registry.version_string(settings.model_version):
+        raise ValueError("MODEL_VERSION과 로컬 번들의 버전이 다릅니다.")
+    return LoadedModel(model, scaler, version)
 
 
 def _load_from_mlflow() -> LoadedModel:
-    import mlflow.tensorflow
-    from mlflow.tracking import MlflowClient
-
-    mv = MlflowClient().get_latest_versions(MODEL_NAME, stages=["Production"])[0]
-    keras_model = mlflow.tensorflow.load_model(f"models:/{MODEL_NAME}/{mv.version}")
-    scaler = JimJakScaler.load(SCALER_PATH)  # 스케일러는 MLflow가 아니라 항상 로컬 파일에서
-    return LoadedModel(keras_model=keras_model, scaler=scaler, version=f"v{mv.version}")
+    version = settings.model_version
+    if not version:
+        current = model_registry.current_version()
+        if current is None:
+            raise ValueError(f"{MODEL_NAME}에 Production 모델이 없습니다. 학습·배포 판정을 먼저 확인하세요.")
+        version = current.version
+    model, scaler, _ = model_registry.load_version(version)
+    return LoadedModel(model, scaler, model_registry.version_string(version))
 
 
 def _load_model() -> LoadedModel:
-    source = os.getenv("MODEL_SOURCE", "local")
-    if source == "mlflow":
+    if settings.model_source == "mlflow":
         return _load_from_mlflow()
     return _load_from_local()
 

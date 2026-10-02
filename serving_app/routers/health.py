@@ -1,4 +1,4 @@
-"""Day1: 헬스체크 엔드포인트."""
+"""헬스체크 엔드포인트"""
 from fastapi import APIRouter, HTTPException
 
 from serving_app import model_loader
@@ -22,6 +22,6 @@ def health():
 
 
 def _current_loading_mode() -> str:
-    import os
+    from serving_app.config import settings
 
-    return os.getenv("LOADING_MODE", "lazy")
+    return settings.loading_mode
