@@ -99,7 +99,11 @@ export function SequenceChart({ sequence, next }: SequenceChartProps) {
           {t}분
         </span>
       ))}
-      <span className="absolute right-0 -translate-y-full pb-1 type-label-12 font-medium text-red-900" style={{ top: y(ACTION_THRESHOLD_MIN) }}>
+      {/* 기준 글자는 마지막(다음 편) 칸 바로 왼쪽에 — 다음 편 예측값 글자와 겹치지 않게 */}
+      <span
+        className="absolute -translate-y-full pr-2 pb-1 type-label-12 font-medium text-red-900"
+        style={{ top: y(ACTION_THRESHOLD_MIN), right: `${(100 - PAD_L / 10) / n}%` }}
+      >
         기준 50분
       </span>
       <div className="absolute inset-x-0 bottom-0 flex justify-between type-label-12 text-gray-900" style={{ paddingLeft: PAD_L }}>
