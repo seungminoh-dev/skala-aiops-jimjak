@@ -17,12 +17,24 @@ from serving_app.request_timing import timing_middleware  # noqa: E402
 
 configure_aiops_logger(settings.log_dir)
 
-app = FastAPI(title="HAIC Serving & AIOps")
+app = FastAPI(
+    title="짐작 | 물류 최적화 AIOps API",
+    description="수하물 처리시간 예측, 모델 상태 조회, CSV 업로드와 드리프트 시연 API. "
+                "예측 단위는 분이며, 모델 버전은 실제 로딩된 버전을 반환합니다. "
+                "배치 테스트는 재학습과 Production 승격을 실행할 수 있습니다.",
+    openapi_tags=[
+        {"name": "예측", "description": "단건 예측 및 정답을 포함한 드리프트 시연"},
+        {"name": "모델 상태", "description": "서빙 준비 여부와 실제 모델 버전"},
+        {"name": "데이터", "description": "학습·재학습에 사용할 수하물 CSV"},
+        {"name": "모니터링", "description": "드리프트 임계값과 최근 판정"},
+        {"name": "로그", "description": "운영 로그와 예측 응답 지연"},
+    ],
+)
 app.middleware("http")(timing_middleware)  # /predict 응답 시간 기록, 1초 넘으면 [WARN]
 
 app.include_router(predict.router)
 app.include_router(health.router)
-app.include_router(data.router)  # HAIC 데이터 업로드
+app.include_router(data.router)  # 수하물 데이터 업로드
 app.include_router(logs.router)  # 대시보드: 재학습 로그 파일 조회
 app.include_router(monitoring.router)  # 대시보드: 드리프트 임계값·연속 초과·최근 판정
 
