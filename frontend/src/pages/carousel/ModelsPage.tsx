@@ -6,6 +6,7 @@ import {
   CheckCircleIcon,
   CheckIcon,
   CubeIcon,
+  HandPalmIcon,
   ListBulletsIcon,
   RocketLaunchIcon,
   XCircleIcon,
@@ -39,6 +40,7 @@ export function ModelsPage() {
   const prod = models.versions.find((v) => v.version === models.production)
   const retraining = sc.currentRun?.steps.some((s) => (s.key === 'retrain' || s.key === 'gate') && s.state === 'running') ?? false
   const focus = carousel.processing ?? carousel.next
+  const awaiting = models.gates.at(-1)?.needsApproval ? models.gates.at(-1)! : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -73,6 +75,11 @@ export function ModelsPage() {
                 <span className="type-label-14 font-semibold">재학습 중</span>
                 <span className="type-label-13 text-gray-900">fine-tune from {models.production} · 최근 14일 · 사건 편 제외 · epochs 10</span>
               </span>
+            </span>
+          ) : awaiting ? (
+            <span className="flex items-center gap-2 text-amber-900">
+              <HandPalmIcon size={16} className="shrink-0" />
+              게이트는 못 넘었지만 지금 모델보다 나은 {awaiting.candidate}이 승인을 기다려요 — 아래 게이트 기록에서 적용할 수 있어요
             </span>
           ) : (
             <span>드리프트가 2번 연속이면 자동으로 재학습하고, 게이트를 통과하면 Production 으로 승격합니다</span>
@@ -141,7 +148,7 @@ export function ModelsPage() {
           ) : (
             <ul className="material-base divide-y divide-gray-alpha-400">
               {[...models.gates].reverse().map((g) => (
-                <GateRow key={g.id} g={g} now={now} />
+                <GateRow key={g.id} g={g} now={now} busy={sc.runningId !== null} />
               ))}
             </ul>
           )}
@@ -226,7 +233,7 @@ function VersionRow({ v, production, index, busy, now }: { v: ModelVersion; prod
 
 /* ───────────────────────── 게이트 ───────────────────────── */
 
-function GateRow({ g, now }: { g: GateRecord; now: string }) {
+function GateRow({ g, now, busy }: { g: GateRecord; now: string; busy: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <li>
@@ -254,7 +261,52 @@ function GateRow({ g, now }: { g: GateRecord; now: string }) {
           </ul>
         </div>
       </div>
+      {g.needsApproval && g.runId && <ApprovalBar g={g} runId={g.runId} busy={busy} />}
     </li>
+  )
+}
+
+/**
+ * 승인 막대 — 게이트는 못 넘었지만 같은 검증 데이터에서 지금 모델보다 나은 후보 (기획서 ③ 재학습 "불합격 시").
+ * 사람이 승인하면 새 버전으로 등록하고 바로 Production (실서버 POST /models/approve).
+ */
+function ApprovalBar({ g, runId, busy }: { g: GateRecord; runId: string; busy: boolean }) {
+  const failed = g.checks.filter((c) => !c.passed).map((c) => c.criterion)
+  const current = g.checks[2]?.value.split(' → ')[0]
+  const approve = async () => {
+    try {
+      const res = await actions.approveCandidate(runId)
+      notifyDeploy(`운영자 승인 — ${res.version}을 Production 으로 적용했어요`)
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : '승인하지 못했어요')
+    }
+  }
+  return (
+    <div className="flex items-center gap-3 border-t border-gray-alpha-400 bg-amber-100 px-4 py-3">
+      <HandPalmIcon size={18} className="shrink-0 text-amber-900" />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="type-label-14 font-medium text-gray-1000">승인 대기 · 지금 모델보다 나아요</span>
+        <span className="truncate type-label-13 text-gray-900">
+          검증 MAE <span className="type-mono-13 text-gray-1000">{current} → {g.checks[0]?.value}</span>분 · 못 넘은 기준: {failed.join(', ')}
+        </span>
+      </span>
+      <ConfirmDialog
+        trigger={
+          <Button size="sm" disabled={busy}>
+            <CheckIcon />
+            승인하고 적용
+          </Button>
+        }
+        title={`${g.candidate}을 Production 으로`}
+        confirmLabel="승인"
+        onConfirm={() => void approve()}
+      >
+        <p className="type-copy-14 text-gray-900">
+          게이트 기준({failed.join(', ')})은 넘지 못했지만, 같은 검증 데이터에서 지금 모델보다 오차가 작아요({current} → {g.checks[0]?.value}분).
+          승인하면 새 버전으로 등록해 다음 예측부터 쓰고, 감시 창은 새로 모입니다.
+        </p>
+      </ConfirmDialog>
+    </div>
   )
 }
 
@@ -271,7 +323,10 @@ const TAG_CLS: Record<LogTag, string> = {
 
 function RetrainLog() {
   const logs = useLogs()
-  const lines = logs.filter((l) => /retrain|gate|promot|drift|new_mae|serving/i.test(l.message)).slice(-12)
+  // 목업(영어 태그 줄)과 실서버(aiops.log 한국어 줄) 둘 다
+  const lines = logs
+    .filter((l) => /retrain|gate|promot|drift|new_mae|serving|재학습|드리프트|배포|승격|승인|되돌림|fine-tuning|보류|초기화/i.test(l.message))
+    .slice(-12)
   if (lines.length === 0)
     return <div className="material-base px-4 py-6 text-center type-label-13 text-gray-900">아직 재학습 로그가 없어요</div>
   return (
