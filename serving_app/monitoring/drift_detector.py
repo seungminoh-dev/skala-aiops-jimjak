@@ -35,7 +35,9 @@ MIN_THRESHOLD = 5.0  # 배포 기준 MAE(분). 임계값은 이보다 낮아지�
 DEFAULT_THRESHOLD = 6.0  # drift_threshold.json 이 없을 때 (보정 전 임시값)
 HISTORY_SIZE = 50  # 상태 API 로 보여 줄 최근 판정 수
 
-THRESHOLD_PATH = os.path.join(os.path.dirname(__file__), "drift_threshold.json")
+THRESHOLD_PATH = os.getenv(
+    "DRIFT_THRESHOLD_PATH", os.path.join(os.path.dirname(__file__), "drift_threshold.json")
+)
 
 # 판정 종류 — /predict/batch-test 의 drift_check.status 와 같은 이름 (기획서 ⑤)
 OK = "ok"
