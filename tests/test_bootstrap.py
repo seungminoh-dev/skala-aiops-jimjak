@@ -69,7 +69,7 @@ class BootstrapTest(unittest.TestCase):
     def test_local_source_never_trains(self):
         with patch.object(bootstrap, 'settings', replace(bootstrap.settings, model_source='local')):
             self.assertFalse(bootstrap.start())
-            self.assertIn('train_baseline_v1.py', bootstrap.message())
+            self.assertIn('model_registry export', bootstrap.message())
         self.assertEqual(bootstrap.status(), bootstrap.IDLE)
 
 

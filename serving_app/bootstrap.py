@@ -7,7 +7,7 @@ Docker 는 init(serving_app.initialize_model)이 먼저 학습하지만, init �
 (기본 데이터 학습 → 배포 기준 → 등록 → 드리프트 임계값 보정, 로컬 기준 약 30초), 끝나면 서빙 캐시에 올린다.
 그동안 /health 는 503 {"status": "training"}, /predict 는 503 으로 답한다.
 
-MODEL_SOURCE=local 이면 학습하지 않는다 (로컬 번들은 scripts/train_baseline_v1.py 로 만든다).
+MODEL_SOURCE=local 이면 학습하지 않는다 (로컬 번들은 MLflow 버전을 python -m serving_app.model_registry export 로 내보내 만든다).
 학습이 실패하면 다시 시도하지 않는다 — python -m serving_app.initialize_model 로 직접 돌린다.
 """
 import logging
@@ -64,7 +64,8 @@ def _train() -> None:
 def message() -> str:
     """운영 모델이 없을 때 /predict 503 응답 글자"""
     if settings.model_source != "mlflow":
-        return f"로컬 모델이 없어요 ({settings.local_model_dir}). python scripts/train_baseline_v1.py 로 먼저 만드세요."
+        return (f"로컬 모델이 없어요 ({settings.local_model_dir}). MODEL_SOURCE=mlflow 로 띄우거나 "
+                "python -m serving_app.model_registry export --version 1 --output <폴더> 로 내보내세요.")
     if _state["status"] == FAILED:
         return f"기본 모델 학습에 실패했어요 ({_state['error']}). python -m serving_app.initialize_model 로 다시 학습하세요."
     return "운영 모델이 아직 없어 기본 모델(v1)을 학습하고 있어요. 30초쯤 뒤에 다시 시도하세요."
