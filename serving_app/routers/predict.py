@@ -5,7 +5,7 @@ from serving_app import model_loader
 from serving_app.schemas import PredictRequest, PredictResponse, BatchTestRequest, BatchTestResponse
 from serving_app.monitoring.retrain_trigger import check_and_trigger
 
-router = APIRouter()
+router = APIRouter(tags=["예측"])
 
 # Day3: 최근 예측 기록(actual/predicted)을 쌓아두는 슬라이딩 윈도우.
 # monitoring/drift_detector.py의 WINDOW_SIZE(21)만큼만 유지한다.
@@ -15,7 +15,12 @@ recent_predictions: list[dict] = []
 ALERT_THRESHOLD_MIN = 50
 
 
-@router.post("/predict", response_model=PredictResponse)
+@router.post("/predict", response_model=PredictResponse, summary="다음 항공편의 수하물 처리시간 예측",
+    description="같은 운영 라인의 직전 20편을 오래된 순서로 전달합니다. 각 칸은 해당 편의 처리시간과 "
+                "바로 다음 편의 좌석 수이며, 마지막 칸에는 예측 대상 편의 좌석 수를 넣습니다. "
+                "운영 적용 시 예측 시점에 처리가 완료된 기록을 사용해야 합니다. "
+                "Lazy 모드에서는 최초 호출 시 모델을 로딩합니다.",
+    responses={422: {"description": "시퀀스가 20편이 아니거나 처리시간·좌석 수가 0 이하인 경우"}})
 def predict(req: PredictRequest):
     model = model_loader.get_model()
     sequence = [p.model_dump() for p in req.sequence]
@@ -27,7 +32,13 @@ def predict(req: PredictRequest):
     )
 
 
-@router.post("/predict/batch-test", response_model=BatchTestResponse)
+@router.post("/predict/batch-test", response_model=BatchTestResponse, summary="정답 포함 배치로 드리프트 판정",
+    description="최소 41편을 받아 슬라이딩 윈도우로 예측하고 마지막 21건의 오차를 판정합니다. "
+                "임계값 초과가 이벤트 없이 연속 2회이면 최신 업로드 CSV로 재학습할 수 있습니다. "
+                "배포 기준 통과 시 Production 승격과 서빙 모델 교체를 수행합니다. "
+                "호출은 판정 상태를 변경합니다. 서버가 중복 관측을 제거하지 않으므로 "
+                "같은 배치를 반복 전송해 새로운 판정 증거로 사용하지 마세요.",
+    responses={422: {"description": "41편 미만이거나 처리시간·좌석 수가 0 이하인 경우"}})
 def batch_test(req: BatchTestRequest):
     """
     Day3 드리프트 감지 시뮬레이션 엔드포인트.
