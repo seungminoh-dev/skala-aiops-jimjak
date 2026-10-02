@@ -359,7 +359,7 @@ export interface UploadResponse {
   rows: number
 }
 
-/* ───────────────────────── 서버 상태 전체 (mockServer) ───────────────────────── */
+/* ───────────────────────── 서버 상태 전체 (liveServer) ───────────────────────── */
 
 export interface ProductionChange {
   at: Ymdhm

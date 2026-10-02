@@ -1,6 +1,6 @@
 /**
- * 실서버 어댑터 — mockServer 와 같은 모양(subscribe · getState · 동작)으로 FastAPI 를 읽고 쓴다.
- * 어느 쪽을 쓸지는 main.tsx 가 시작할 때 /health 로 고른다 (api/server.ts).
+ * 실서버 어댑터 — 화면의 서버 상태(ServerState)를 짐작 FastAPI 로 채우고, 동작을 FastAPI 로 보낸다.
+ * hooks.ts 가 subscribe · getState · 동작만 쓴다. 서버가 없으면 "연결 끊김"으로 보이고 5초마다 다시 붙는다.
  *
  * 서버에서 읽는 것 (5초마다, 동작 뒤에는 바로)
  *   /health · /logs/latency      서버 상태 · 운영 버전 · 응답 시간
@@ -39,7 +39,6 @@ import {
   type ScenarioKey,
   type ServerScenarioId,
   type ServerState,
-  type ServerStatus,
   type StepState,
   type UploadResponse,
   type VerdictInput,
@@ -283,8 +282,6 @@ const listeners = new Set<() => void>()
 let ticker: ReturnType<typeof setInterval> | null = null
 let seconds = 0
 let polling = false
-/** 서버 연결이 끊긴 동안 데모용으로 덮어쓴 상태 (setServerStatus) */
-let statusOverride: ServerStatus | null = null
 
 function setState(next: ServerState) {
   state = next
@@ -504,7 +501,7 @@ async function refreshHealth(): Promise<boolean> {
     ...s,
     health: {
       ...s.health,
-      status: statusOverride ?? 'connected',
+      status: 'connected',
       lastUpdatedAt: s.clock.liveNow,
       latency: latency
         ? { p50Ms: Math.round(latency.p50_ms ?? 0), p95Ms: Math.round(latency.p95_ms ?? 0), requests: latency.total, windowLabel: `최근 ${latency.count}건` }
@@ -829,12 +826,6 @@ export function setAt(at: Ymdhm | null): void {
   if (at !== null && !/^\d{12}$/.test(at)) return
   if (at === state.clock.at) return
   patch((s) => ({ ...s, clock: { ...s.clock, at } }))
-}
-
-/** 데모용: 연결 상태 표시를 덮어쓴다 (null 이면 실제 상태로) */
-export function setServerStatus(status: ServerStatus): void {
-  statusOverride = status === 'connected' ? null : status
-  patch((s) => ({ ...s, health: { ...s.health, status } }))
 }
 
 /** 실서버 주소 (화면 하단 표기 등) */

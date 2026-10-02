@@ -80,22 +80,3 @@ export async function requestText(path: string, timeoutMs = 15_000): Promise<str
     clearTimeout(timer)
   }
 }
-
-/**
- * 짐작 FastAPI 서버인지 확인 — /health 가 JSON 으로 답하면(200 ok · 503 not_ready 둘 다) 실서버.
- * 정적 호스팅처럼 HTML 이 오거나 연결이 안 되면 false.
- */
-export async function probeServer(timeoutMs = 1_500): Promise<boolean> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(`${API_BASE}/health`, { signal: controller.signal })
-    if (!(res.headers.get('content-type') ?? '').includes('application/json')) return false
-    const body = (await res.json()) as { status?: unknown; detail?: { status?: unknown } }
-    return typeof body.status === 'string' || typeof body.detail?.status === 'string'
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timer)
-  }
-}

@@ -1,10 +1,10 @@
-import { ArrowCounterClockwiseIcon, DatabaseIcon, PlugsConnectedIcon, PlugsIcon } from '@phosphor-icons/react'
+import { ArrowCounterClockwiseIcon, PlugsConnectedIcon, PlugsIcon } from '@phosphor-icons/react'
 
 import { LIVE_CAROUSEL, PAGE_LABEL, scopeOf, TENANT, type PageKey } from '@/app/routes'
 import { actions, reopenAllAlerts, useDemoClock, useHealth } from '@/api'
 import { ConfirmDialog } from '@/components/app/ConfirmDialog'
 import { Button } from '@/components/ui/button'
-import { fmtClock } from '@/lib/format'
+import { fmtClock, type ServerStatus } from '@/lib/format'
 
 /**
  * 헤더 56px — DESIGN.md "4. 배치" · "6. 데모 조작".
@@ -66,7 +66,7 @@ function Slash() {
   )
 }
 
-function DataStatus({ status }: { status: 'connected' | 'disconnected' | 'mock' }) {
+function DataStatus({ status }: { status: ServerStatus }) {
   if (status === 'connected')
     return (
       <span className="flex items-center gap-1.5 type-label-13 text-gray-900">
@@ -74,17 +74,10 @@ function DataStatus({ status }: { status: 'connected' | 'disconnected' | 'mock' 
         API 연결됨
       </span>
     )
-  if (status === 'disconnected')
-    return (
-      <span className="flex items-center gap-1.5 type-label-13 text-red-900">
-        <PlugsIcon size={16} />
-        연결 끊김
-      </span>
-    )
   return (
-    <span className="flex items-center gap-1.5 type-label-13 text-gray-900">
-      <DatabaseIcon size={16} />
-      목업 데이터
+    <span className="flex items-center gap-1.5 type-label-13 text-red-900">
+      <PlugsIcon size={16} />
+      연결 끊김
     </span>
   )
 }

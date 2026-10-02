@@ -5,11 +5,11 @@ import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import './index.css'
 import App from './App.tsx'
-import { connect } from '@/api/server'
+import { start } from '@/api/liveServer'
 
-// 짐작 FastAPI 가 답하면 실서버, 아니면 목업으로 — 첫 데이터를 읽은 뒤에 그린다 (api/server.ts)
-void connect()
-  .catch(() => 'mock')
+// 짐작 FastAPI 에서 첫 데이터를 읽은 뒤에 그린다 — 서버가 없으면 "연결 끊김"으로 열고 5초마다 다시 붙는다
+void start()
+  .catch(() => undefined)
   .finally(() => {
     createRoot(document.getElementById('root')!).render(
       <StrictMode>

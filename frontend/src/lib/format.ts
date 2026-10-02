@@ -324,20 +324,15 @@ export function lineStatus(status: LineStatus): StatusDisplay {
 }
 
 /* 서버 (상단 바) */
-export type ServerStatus = 'connected' | 'disconnected' | 'mock'
+export type ServerStatus = 'connected' | 'disconnected'
 
-/**
- * 서버 상태. connected → "연결됨" success 점 · disconnected → "연결 끊김" danger 점
- * mock → "목업 데이터" 빈 점: 서버 없이 목업 API로 도는 동안은 "연결됨"이라고 하지 않는다
- */
+/** 서버 상태. connected → "연결됨" success 점 · disconnected → "연결 끊김" danger 점 */
 export function serverStatus(status: ServerStatus): StatusDisplay {
   switch (status) {
     case 'connected':
       return { label: '연결됨', dot: 'success', textClass: TEXT_MUTED }
     case 'disconnected':
       return { label: '연결 끊김', dot: 'danger', textClass: TEXT_MUTED }
-    case 'mock':
-      return { label: '목업 데이터', dot: 'hollow', textClass: 'text-ink-subtle' }
   }
 }
 

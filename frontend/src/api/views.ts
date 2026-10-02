@@ -1,9 +1,9 @@
 /**
  * 서버 상태 → 화면이 쓰는 모양. 순수 함수라 실제 서버로 바꿔도 그대로 쓸 수 있다.
  */
-import { MIN_UPLOAD_ROWS } from '@/api/mockServer'
+import { MIN_UPLOAD_ROWS } from '@/api/csv'
 import { flightsAt, nextPredictionAt } from '@/api/ops'
-import { DATA_FILES, SCENARIO_SPECS } from '@/api/scenarioData'
+import { SCENARIO_SPECS } from '@/api/scenarioData'
 import type {
   BatchRecord,
   DatasetView,
@@ -120,7 +120,7 @@ export function buildScenariosView(lab: ServerState['lab'], batches: readonly Ba
       ...sc,
       runs: lab.runCounts[sc.id],
       serverId: spec.serverId,
-      dataFile: DATA_FILES[sc.id].summary.fileName,
+      dataFile: spec.dataFile,
       cursor,
       cycle: spec.steps.length,
       nextExpected: spec.steps[cursor].expectText,
