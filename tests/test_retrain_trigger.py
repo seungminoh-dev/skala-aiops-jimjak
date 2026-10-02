@@ -38,16 +38,16 @@ def window(error: float) -> list[dict]:
 
 
 class RetrainRowsTest(unittest.TestCase):
-    def test_last_two_weeks_without_events(self):
+    def test_original_rows_preserve_events_and_context_for_fine_tune(self):
         path = write_csv(days=30, event_at=(470, 474))  # 사건 4편은 마지막 2주 안
         self.addCleanup(os.remove, path)
         rows, info = rt.retrain_rows(path)
         last = max(r["landingDatetime"] for r in rows)
         first = min(r["landingDatetime"] for r in rows)
         span = dt.datetime.strptime(last, "%Y%m%d%H%M") - dt.datetime.strptime(first, "%Y%m%d%H%M")
-        self.assertLessEqual(span, dt.timedelta(days=14))
-        self.assertTrue(all(not r["event_tag"] for r in rows))
-        self.assertEqual(info["events_excluded"], 4)
+        self.assertGreater(span, dt.timedelta(days=14))
+        self.assertEqual(sum(bool(r["event_tag"]) for r in rows), 4)
+        self.assertEqual(info["event_rows"], 4)
         self.assertEqual(info["rows"], len(rows))
 
 
@@ -105,6 +105,16 @@ class CheckAndTriggerTest(unittest.TestCase):
         self.assertFalse(result["promoted"])
         self.assertFalse(result["retrain"]["ok"])
         self.assertEqual(dd.STATE.consecutive, 0)
+
+    def test_structured_fine_tune_failure_is_not_reported_as_success(self):
+        rt.check_and_trigger(window(8))
+        failed = {"status": "failed", "promoted": False, "passed": False,
+                  "failure_code": "training_failed", "failure_reason": "interrupted"}
+        with patch.object(rt, "retrain_rows", return_value=(self.rows(), {"file": "x.csv", "rows": 200})), \
+                patch.object(rt, "_fine_tune", return_value=failed):
+            result = rt.check_and_trigger(window(8))
+        self.assertFalse(result["retrain"]["ok"])
+        self.assertEqual(result["retrain"]["error"], "interrupted")
 
     def test_alert_only_never_retrains(self):
         tagged = window(9)
