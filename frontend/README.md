@@ -12,8 +12,12 @@ cd frontend
 npm install
 npm run dev        # http://localhost:5173/#/
 npm run typecheck  # tsc -b
-npm run build      # vite build → frontend/dist
+npm run build      # vite build → frontend/dist (확인용)
+npm run build:serve  # → serving_app/static (FastAPI 가 "/" 에서 서빙. 폴더를 비우고 새로 쓴다)
 ```
+
+FastAPI(`serving_app/main.py`)는 API 라우터를 먼저 등록하고 `serving_app/static` 을 `/` 에 마지막으로 mount 한다.
+`uvicorn serving_app.main:app` 으로 띄우면 `http://localhost:8000/` 에서 이 화면이, `/health` · `/predict` 등은 API 가 응답한다.
 
 Node 20 이상. HashRouter 와 `base: './'` 라서 `dist/` 를 어느 경로에 올려도 열린다.
 

@@ -5,10 +5,11 @@ Day1: app 생성, 라우터(predict, health) 등록, startup 이벤트에서 로
 Day2: data 라우터 등록 (HAIC 데이터 업로드)
 Day3: "aiops" 로거를 logs/aiops.log 파일로 연결(로깅 설정) + logs 라우터(로그 파일 조회) 등록
 
-정적 대시보드: serving_app/static/index.html 이 /health · /predict · /predict/batch-test ·
-/data/upload · /logs 를 호출하는 확인용 화면입니다. API 라우터를 먼저 등록한 뒤
-StaticFiles를 "/"에 마지막으로 mount해야, /predict 같은 API 경로가 정적 파일보다
-먼저 매칭됩니다(Starlette는 등록 순서대로 라우트를 검사합니다).
+정적 화면: serving_app/static 은 「짐작」 프론트엔드(frontend/)의 빌드 결과입니다.
+frontend 에서 `npm run build:serve` 를 실행하면 이 폴더를 비우고 새로 채웁니다(손으로 고치지 않음).
+화면 이동은 해시(#/t1-03 등)라서 FastAPI 는 "/" 의 index.html 과 /assets/* 만 내주면 됩니다.
+API 라우터를 먼저 등록한 뒤 StaticFiles를 "/"에 마지막으로 mount해야, /predict 같은
+API 경로가 정적 파일보다 먼저 매칭됩니다(Starlette는 등록 순서대로 라우트를 검사합니다).
 """
 import logging
 import os
@@ -40,7 +41,7 @@ app.include_router(data.router)  # HAIC 데이터 업로드
 app.include_router(logs.router)  # 대시보드: 재학습 로그 파일 조회
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")  # 대시보드 UI
+app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")  # 짐작 프론트엔드 (frontend/ 빌드 결과)
 
 
 @app.on_event("startup")

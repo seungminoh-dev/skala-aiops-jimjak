@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:serve": "tsc -b && vite build --outDir ../serving_app/static --emptyOutDir",
     "lint": "oxlint src",
     "preview": "vite preview",
     "typecheck": "tsc -b"
