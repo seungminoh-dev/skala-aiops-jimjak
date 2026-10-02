@@ -118,7 +118,7 @@ def simulate_line_data(
             "aircraftSubtype": subtype,
             "seats": seats,
             "estimatedDatetime": eta_dt.strftime("%Y%m%d%H%M"),
-            "LandingDatetime": landing_dt.strftime("%Y%m%d%H%M"), # 3. 대문자 L 수정 반영[cite: 6]
+            "landingDatetime": landing_dt.strftime("%Y%m%d%H%M"), # 3. 대문자 L 수정 반영[cite: 6]
             "bagLastTime": bag_last_dt.strftime("%Y%m%d%H%M"),
             "wait_min": wait_min,
             "event_tag": event_tag,

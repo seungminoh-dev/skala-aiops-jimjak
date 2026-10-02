@@ -1,110 +1,117 @@
-"""
-HAIC 데이터를 LSTM 입력용 시퀀스로 변환하는 공용 유틸리티.
-
-Day1 baseline 학습(scripts/train_baseline_v1.py), Day2 MLflow 학습
-(serving_app/train_and_register.py), Day3 fine-tuning 재학습
-(monitoring/retrain_trigger.py)이 모두 이 모듈을 재사용합니다. 시퀀스 정의를
-한 곳에서만 관리해야 "서빙 시점 입력"과 "학습 시점 입력"이 어긋나는 실무 사고를
-방지할 수 있습니다.
-
-입력 시퀀스: 최근 SEQ_LEN(20)거래일의 (close, volume)
-타깃: 그다음 거래일의 close
-"""
 import csv
 import pickle
+from pathlib import Path
 
-SEQ_LEN = 20  # LSTM 입력 윈도우 길이 (거래일 수) - 약 1개월치 거래일
-
-
-def load_rows(csv_path: str = "data/haic_prices.csv") -> list[dict]:
-    with open(csv_path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        rows = [
-            {
-                "Date": r["Date"],
-                "Close": float(r["Close"]),
-                "Volume": float(r["Volume"]),
-            }
-            for r in reader
-        ]
-    return rows
+SEQ_LEN = 20
+REQUIRED_COLUMNS = {
+    "flightId", "terminalId", "bagCarouselId", "line_id", "aircraftSubtype",
+    "seats", "estimatedDatetime", "landingDatetime", "bagLastTime",
+    "wait_min", "event_tag",
+}
 
 
-class HAICScaler:
-    """
-    close/volume을 각각 [0, 1] 범위로 정규화하는 min-max 스케일러.
+def normalize_rows(rows):
+    """기존 LandingDatetime 표기를 수용하고, 라인별 시간순으로 정렬한다."""
+    result = []
+    for raw in rows:
+        row = dict(raw)
+        if "landingDatetime" not in row and "LandingDatetime" in row:
+            row["landingDatetime"] = row.pop("LandingDatetime")
+        missing = REQUIRED_COLUMNS - row.keys()
+        if missing:
+            raise ValueError(f"CSV 필수 컬럼 누락: {sorted(missing)}")
+        row["wait_min"] = float(row["wait_min"])
+        row["seats"] = int(row["seats"])
+        row["event_tag"] = row["event_tag"] or ""
+        result.append(row)
+    return sorted(result, key=lambda r: (r["line_id"], r["landingDatetime"]))
 
-    LSTM은 스케일에 민감하기 때문에(트리 기반 모델과 달리) 반드시 정규화가 필요합니다.
-    Day1에서 base 데이터로 한 번 fit한 뒤 serving_app/models/scaler.pkl로 저장해두고,
-    Day2 MLflow 학습과 Day3 fine-tuning 모두 같은 스케일러를 재사용합니다.
-    (fine-tuning 시 스케일러를 다시 fit하지 않는 이유: 이미 이 스케일로 학습된 모델
-     가중치와 어긋나면 fine-tuning 자체가 무의미해지기 때문입니다.)
-    """
 
+def load_rows(csv_path="data/train_normal.csv"):
+    with open(csv_path, encoding="utf-8-sig", newline="") as f:
+        return normalize_rows(csv.DictReader(f))
+
+
+class JimJakScaler:
+    """학습 구간에서만 fit하며, 재학습·서빙에서는 저장된 기준을 재사용한다."""
     def __init__(self):
-        self.close_min = self.close_max = None
-        self.volume_min = self.volume_max = None
+        self.wait_min = self.wait_max = None
+        self.seats_min = self.seats_max = None
 
-    def fit(self, rows: list[dict]) -> "HAICScaler":
-        closes = [r["Close"] for r in rows]
-        volumes = [r["Volume"] for r in rows]
-        self.close_min, self.close_max = min(closes), max(closes)
-        self.volume_min, self.volume_max = min(volumes), max(volumes)
+    def fit(self, rows):
+        if not rows:
+            raise ValueError("스케일러 학습 데이터가 없습니다.")
+        self.wait_min = min(r["wait_min"] for r in rows)
+        self.wait_max = max(r["wait_min"] for r in rows)
+        self.seats_min = min(r["seats"] for r in rows)
+        self.seats_max = max(r["seats"] for r in rows)
         return self
 
-    def _scale(self, value: float, lo: float, hi: float) -> float:
-        if hi == lo:
-            return 0.0
-        return (value - lo) / (hi - lo)
+    @staticmethod
+    def _scale(value, lo, hi):
+        return 0.0 if hi == lo else (value - lo) / (hi - lo)
 
-    def _unscale(self, value: float, lo: float, hi: float) -> float:
-        return value * (hi - lo) + lo
+    def transform_point(self, wait_min, next_seats):
+        return [self.scale_wait_min(wait_min),
+                self._scale(next_seats, self.seats_min, self.seats_max)]
 
-    def transform_point(self, close: float, volume: float) -> list[float]:
-        return [
-            self._scale(close, self.close_min, self.close_max),
-            self._scale(volume, self.volume_min, self.volume_max),
-        ]
+    def scale_wait_min(self, value):
+        return self._scale(value, self.wait_min, self.wait_max)
 
-    def scale_close(self, close: float) -> float:
-        """타깃(다음날 종가)을 학습용으로 정규화. 입력 시퀀스와 같은 스케일을 써야
-        손실(loss)이 과도하게 커지지 않고 학습이 안정적으로 수렴한다."""
-        return self._scale(close, self.close_min, self.close_max)
+    def inverse_wait_min(self, value):
+        return value * (self.wait_max - self.wait_min) + self.wait_min
 
-    def inverse_close(self, scaled_close: float) -> float:
-        """모델이 뱉은 정규화된 예측값을 실제 달러 단위 종가로 되돌린다."""
-        return self._unscale(scaled_close, self.close_min, self.close_max)
-
-    def save(self, path: str = "serving_app/models/scaler.pkl"):
+    def save(self, path="serving_app/models/scaler.pkl"):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             pickle.dump(self.__dict__, f)
 
     @classmethod
-    def load(cls, path: str = "serving_app/models/scaler.pkl") -> "HAICScaler":
-        scaler = cls()
+    def load(cls, path="serving_app/models/scaler.pkl"):
         with open(path, "rb") as f:
-            scaler.__dict__.update(pickle.load(f))
+            state = pickle.load(f)
+        required = {"wait_min", "wait_max", "seats_min", "seats_max"}
+        if not required.issubset(state):
+            raise ValueError("수하물용 스케일러가 아닙니다. 최초 학습을 다시 실행하세요.")
+        scaler = cls()
+        scaler.__dict__.update(state)
         return scaler
 
 
-def build_sequences(rows: list[dict], scaler: HAICScaler, seq_len: int = SEQ_LEN):
-    """
-    rows(시간순 OHLCV)에서 (SEQ_LEN, 2) 크기의 정규화된 입력 시퀀스와
-    다음날 종가(정규화 전 실값) 타깃을 만든다.
+def sequence_samples(rows, seq_len=SEQ_LEN):
+    """각 샘플은 같은 라인의 과거 기록과 타깃. 결과는 타깃 시각순이다."""
+    from itertools import groupby
+    samples = []
+    ordered = sorted(rows, key=lambda r: (r["line_id"], r["landingDatetime"]))
+    for _, group in groupby(ordered, key=lambda r: r["line_id"]):
+        flights = list(group)
+        for i in range(seq_len, len(flights)):
+            samples.append((flights[i-seq_len:i], flights[i]))
+    return sorted(samples, key=lambda s: (s[1]["landingDatetime"], s[1]["line_id"]))
 
-    반환: X (n_samples, seq_len, 2), y (n_samples,) - y는 스케일 안 된 실제 종가
-    """
-    scaled_points = [scaler.transform_point(r["Close"], r["Volume"]) for r in rows]
-    closes = [r["Close"] for r in rows]
 
+def build_sequences(rows, scaler, seq_len=SEQ_LEN):
     X, y = [], []
-    for i in range(len(rows) - seq_len):
-        X.append(scaled_points[i : i + seq_len])
-        y.append(closes[i + seq_len])
+    for history, target in sequence_samples(rows, seq_len):
+        following = history[1:] + [target]
+        X.append([scaler.transform_point(current["wait_min"], nxt["seats"])
+                  for current, nxt in zip(history, following)])
+        y.append(target["wait_min"])
     return X, y
 
 
-def train_test_split(X: list, y: list, test_ratio: float = 0.2):
-    """시간 순서를 유지한 채 앞부분을 train, 뒷부분을 test로 나눈다 (미래 데이터 누수 방지)."""
-    split_idx = int(len(X) * (1 - test_ratio))
-    return X[:split_idx], y[:split_idx], X[split_idx:], y[split_idx:]
+def train_test_split(X, y, test_ratio=0.2):
+    if not 0 < test_ratio < 1 or len(X) != len(y):
+        raise ValueError("검증 비율 또는 X/y 길이가 올바르지 않습니다.")
+    split = int(len(X) * (1 - test_ratio))
+    if split < 1 or split >= len(X):
+        raise ValueError("학습·검증 시퀀스가 각각 최소 1개 필요합니다.")
+    return X[:split], y[:split], X[split:], y[split:]
+
+
+def fit_training_scaler(rows, test_ratio=0.2):
+    """검증 타깃과 이후 기록이 스케일러 fit에 들어가지 않도록 한다."""
+    samples = sequence_samples(rows)
+    train, _, _, _ = train_test_split(samples, samples, test_ratio)
+    cutoff = samples[len(train)][1]["landingDatetime"]
+    return JimJakScaler().fit([r for r in rows if r["landingDatetime"] < cutoff])
