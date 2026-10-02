@@ -46,7 +46,7 @@ export function ModelsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="모델"
-        sub={<>BagTime_Predictor · LSTM (앞 20편 × 2특성) · MLflow 레지스트리 · 게이트 MAE ≤ {models.gateMae}분</>}
+        sub={<>{models.name || 'MLflow 모델'} · LSTM (앞 20편 × 2특성) · MLflow 레지스트리 · 게이트 MAE ≤ {models.gateMae}분</>}
         actions={
           <Button variant="outline" onClick={() => navigate(PAGE_PATH.logs)}>
             <ListBulletsIcon />

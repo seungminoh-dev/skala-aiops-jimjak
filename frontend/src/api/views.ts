@@ -112,6 +112,7 @@ export function buildModelsView(
       .filter((f) => f.at >= liveNow)
       .sort((a, b) => a.at.localeCompare(b.at))[0] ?? null
   return {
+    name: models.name,
     production: models.production,
     versions: models.versions,
     gates: models.gates,

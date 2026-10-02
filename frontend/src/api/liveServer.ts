@@ -151,6 +151,7 @@ interface GateBody {
 }
 
 interface ModelsBody {
+  model_name: string
   production: ModelVersionId | null
   versions: VersionBody[]
   gates: GateBody[]
@@ -272,7 +273,7 @@ function initialState(): ServerState {
       refreshSec: REFRESH_SEC,
       latency: { p50Ms: 0, p95Ms: 0, requests: 0, windowLabel: '최근 예측' },
     },
-    models: { production: 'v1', versions: [], gates: [], history: [] },
+    models: { name: '', production: 'v1', versions: [], gates: [], history: [] },
     monitor: { threshold: 5, gateMae: 5, consecutiveLimit: 2, windowSize: WINDOW_SIZE, window: [], judgedWindow: [], batches: [], consecutive: 0 },
     lab: emptyLab(),
     logs: [],
@@ -472,7 +473,7 @@ function mapModels(body: ModelsBody, gateMae: number): ServerState['models'] {
     }
   })
   const history = versions.map((v) => ({ at: v.deployedAt, version: v.version })).sort((a, b) => a.at.localeCompare(b.at))
-  return { production: body.production ?? versions[versions.length - 1]?.version ?? 'v1', versions, gates, history }
+  return { name: body.model_name, production: body.production ?? versions[versions.length - 1]?.version ?? 'v1', versions, gates, history }
 }
 
 function mapLogs(events: readonly LogEvent[]): LogLine[] {

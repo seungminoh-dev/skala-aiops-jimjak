@@ -265,6 +265,8 @@ export interface MonitoringView {
 }
 
 export interface ModelsView {
+  /** MLflow 레지스트리 모델 이름 */
+  name: string
   /** 운영 버전 */
   production: ModelVersionId
   /** 모델 버전 (배포된 것만. 오래된 것 → 최근) */
@@ -393,6 +395,8 @@ export interface ServerState {
     latency: Latency
   }
   models: {
+    /** MLflow 레지스트리 모델 이름 (GET /models model_name) */
+    name: string
     production: ModelVersionId
     versions: ModelVersion[]
     gates: GateRecord[]
