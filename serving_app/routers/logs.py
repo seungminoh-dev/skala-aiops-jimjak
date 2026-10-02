@@ -1,16 +1,3 @@
-"""
-로그 조회 — 대시보드(로그·모델 화면)용 읽기 전용 API. 새 학습·승격 로직은 없다.
-
-monitoring/retrain_trigger.py·train_and_register.py 의 "aiops" 로거가 쓰는 logs/aiops.log 를 그대로 노출한다
-(로거 설정은 serving_app/logging_config.py, 앱 시작 시 main.py 에서 한 번).
-
-    GET /logs                    로그 파일 목록
-    GET /logs/events             aiops.log 를 줄 단위 사건으로 — [{time, tag, message}] (태그로 거르기, 최근 N개)
-    GET /logs/latency            /predict 응답 시간 p50·p95·최대, 1초 초과 횟수 (serving_app/request_timing.py)
-    GET /logs/{파일명}?tail=N    파일 내용 (tail 을 주면 마지막 N줄만)
-
-기대 순서(기획서 ③): 재학습 [WARN] → [INFO] → [OK] 또는 [FAIL], 알림만 [ALERT]
-"""
 import os
 import re
 

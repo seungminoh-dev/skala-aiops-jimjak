@@ -2,7 +2,9 @@ import csv
 import pickle
 from pathlib import Path
 
-SEQ_LEN = 20
+from serving_app.config import settings
+
+SEQ_LEN = settings.sequence_length
 REQUIRED_COLUMNS = {
     "flightId", "terminalId", "bagCarouselId", "line_id", "aircraftSubtype",
     "seats", "estimatedDatetime", "landingDatetime", "bagLastTime",
@@ -61,13 +63,13 @@ class JimJakScaler:
     def inverse_wait_min(self, value):
         return value * (self.wait_max - self.wait_min) + self.wait_min
 
-    def save(self, path="serving_app/models/scaler.pkl"):
+    def save(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             pickle.dump(self.__dict__, f)
 
     @classmethod
-    def load(cls, path="serving_app/models/scaler.pkl"):
+    def load(cls, path):
         with open(path, "rb") as f:
             state = pickle.load(f)
         required = {"wait_min", "wait_max", "seats_min", "seats_max"}

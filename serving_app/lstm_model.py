@@ -1,6 +1,7 @@
 from tensorflow import keras
 
 from data.features import SEQ_LEN
+from serving_app.config import settings
 
 N_FEATURES = 2  # (해당 편 wait_min, 다음 편 seats)
 
@@ -16,5 +17,5 @@ def build_model() -> keras.Model:
             keras.layers.Dense(1),
         ]
     )
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-3), loss="mse")
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=settings.learning_rate), loss="mse")
     return model
