@@ -182,7 +182,7 @@ class ModelManagementTest(unittest.TestCase):
             return training._log_and_register(model, scaler, X, run.info.run_id, gate)
 
     def _retraining_rows(self):
-        from test_retraining_data import flight_rows
+        from tests.test_retraining_data import flight_rows
         return [dict(row, wait_min=13 + 4 * (i % 2), seats=100 + 200 * (i % 2))
                 for i, row in enumerate(flight_rows())]
 

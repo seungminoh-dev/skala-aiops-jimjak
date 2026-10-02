@@ -68,6 +68,14 @@ SKALA 모델 서빙·AIOps 미니 프로젝트 저장소입니다.
 | `terminal_open_4w.csv` | 450편 | 2주간 혼란(`terminal_open`) 후 안정화 | 결과 로그 확인용 |
 | `process_change_2w.csv` | 220편 | 처리 프로세스 변경 (변동폭 확대) | 결과 로그 확인용 |
 
+### 테스트
+
+저장소 루트에서 `tests/` 전체를 돌린다 (`tests` 는 패키지라 PYTHONPATH 를 따로 주지 않아도 된다).
+
+```bash
+python -m unittest discover
+```
+
 ---
 
 # HAIC 모델 서빙 및 AIOps 3일 실습 스켈레톤
