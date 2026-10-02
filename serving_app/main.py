@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from serving_app import model_loader
 from serving_app.config import settings
-from serving_app.routers import data, health, logs, monitoring, predict
+from serving_app.routers import data, health, logs, models, monitoring, predict
 
 # 드리프트 판정·재학습·배포 기준·응답 지연이 쓰는 "aiops" 로거를 logs/aiops.log 와 터미널에 연결한다.
 # 형식: "시각 [태그] 메시지" (태그가 메시지에 있으면 등급을 다시 붙이지 않는다). routers/logs.py 가 읽기 전용으로 노출.
@@ -25,6 +25,7 @@ app.include_router(health.router)
 app.include_router(data.router)  # HAIC 데이터 업로드
 app.include_router(logs.router)  # 대시보드: 재학습 로그 파일 조회
 app.include_router(monitoring.router)  # 대시보드: 드리프트 임계값·연속 초과·최근 판정
+app.include_router(models.router)  # 대시보드: 모델 버전·게이트 기록, 운영자 승인·되돌림
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")  # 짐작 프론트엔드 (frontend/ 빌드 결과)
