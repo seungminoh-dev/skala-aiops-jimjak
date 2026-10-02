@@ -167,6 +167,155 @@ class ModelManagementTest(unittest.TestCase):
         self.assertIsNot(captured[1][1], old_scaler)
         self.assertFalse(np.allclose(captured[0][2], captured[1][2]))
 
+    def _register_retraining_model(self):
+        scaler = JimJakScaler().fit([{'wait_min': 10, 'seats': 100},
+                                     {'wait_min': 20, 'seats': 300}])
+        model = self.constant_model()
+        weights, bias = model.layers[-1].get_weights()
+        weights[-1, 0] = 0.4  # 타깃 좌석 수에 따라 12.8/16.8분 예측
+        bias[0] = 0.28
+        model.layers[-1].set_weights([weights, bias])
+        X = self.X.copy()
+        X[1, -1, 1] = 1
+        gate = evaluate_gate([13, 17], training._predict_minutes(model, scaler, X), [15, 15])
+        with mlflow.start_run() as run:
+            return training._log_and_register(model, scaler, X, run.info.run_id, gate)
+
+    def _retraining_rows(self):
+        from test_retraining_data import flight_rows
+        return [dict(row, wait_min=13 + 4 * (i % 2), seats=100 + 200 * (i % 2))
+                for i, row in enumerate(flight_rows())]
+
+    def test_fine_tune_10_epochs_promotes_without_mutating_current_model(self):
+        self._register_retraining_model()
+        cached = model_loader.reload_model()
+        old_weights = [value.copy() for value in cached._keras_model.get_weights()]
+        loaded_models, evaluation_inputs, fits = [], [], []
+        original_load = model_registry.load_version
+        original_predict = training._predict_minutes
+        original_fit = keras.Model.fit
+
+        def capture_load(version):
+            loaded = original_load(version)
+            loaded_models.append((loaded[0], [w.copy() for w in loaded[0].get_weights()]))
+            return loaded
+
+        def capture_predict(model, scaler, X):
+            evaluation_inputs.append(X.copy())
+            return original_predict(model, scaler, X)
+
+        def capture_fit(model, *args, **kwargs):
+            fits.append((kwargs['epochs'], float(model.optimizer.learning_rate.numpy())))
+            return original_fit(model, *args, **kwargs)
+
+        with patch.object(model_registry, 'load_version', side_effect=capture_load), \
+                patch.object(training, '_predict_minutes', side_effect=capture_predict), \
+                patch.object(keras.Model, 'fit', autospec=True, side_effect=capture_fit):
+            result = training.fine_tune(self._retraining_rows())
+        self.assertEqual(result['status'], 'promoted', result)
+        self.assertEqual(result['version'], '2')
+        self.assertEqual(result['model_version'], 'v2')
+        self.assertEqual(result['current_version'], '1')
+        self.assertEqual(fits[0][0], 10)
+        self.assertAlmostEqual(fits[0][1], 1e-4)
+        np.testing.assert_array_equal(evaluation_inputs[0], evaluation_inputs[1])
+        for model, weights in loaded_models:
+            for actual, original in zip(model.get_weights(), weights):
+                np.testing.assert_array_equal(actual, original)
+        for actual, original in zip(cached._keras_model.get_weights(), old_weights):
+            np.testing.assert_array_equal(actual, original)
+        self.assertIs(model_loader._model_cache, cached)
+        self.assertEqual(cached.version, 'v1')
+        run = model_registry.configure_tracking().get_run(result['run_id'])
+        self.assertEqual(run.data.params['epochs'], '10')
+        self.assertEqual(run.data.params['validation_days'], '3')
+        self.assertEqual(run.data.params['event_policy'], 'exclude_if_history_or_target_tagged')
+        self.assertEqual(run.data.tags['deployment_status'], 'promoted')
+        self.assertEqual(result['dataset']['n_validation'], 72)
+        for method in ('candidate', 'current', 'baseline'):
+            self.assertIsNotNone(result['metrics'][method]['mae'])
+            self.assertIsNotNone(result['metrics'][method]['rmse'])
+        artifact = mlflow.artifacts.download_artifacts(
+            artifact_uri=f"runs:/{result['run_id']}/validation_predictions.json", dst_path=str(self.temp))
+        table = json.loads(Path(artifact).read_text())
+        self.assertEqual(len(table['data']), 72)
+        self.assertEqual(table['columns'], ['line_id', 'landingDatetime', 'actual_min',
+                                            'candidate_min', 'current_min', 'rolling_mean_min'])
+
+    def test_fine_tune_rejected_candidate_returns_existing_version(self):
+        self._register_retraining_model()
+        result = training.fine_tune(csv_path=str(ROOT / 'data/normal_2w.csv'))
+        self.assertEqual(result['status'], 'rejected', result)
+        self.assertFalse(result['promoted'])
+        self.assertEqual(result['model_version'], 'v1')
+        self.assertIsNone(result['version'])
+        self.assertEqual(result['failure_code'], 'gate_rejected')
+        self.assertTrue(result['failure_reason'])
+        self.assertEqual(str(model_registry.current_version().version), '1')
+        self.assertEqual(result['dataset']['n_observed_dates'], 11)
+
+    def test_fine_tune_insufficient_samples_defers_without_loading_or_training(self):
+        from types import SimpleNamespace
+        with patch.object(training, '_current_version', return_value=SimpleNamespace(version='1')), \
+                patch.object(model_registry, 'load_version') as load, \
+                patch.object(keras.Model, 'fit') as fit:
+            result = training.fine_tune(rows=[])
+        self.assertEqual(result['status'], 'deferred')
+        self.assertEqual(result['failure_code'], 'insufficient_data')
+        self.assertEqual(result['model_version'], 'v1')
+        self.assertIsNone(result['metrics']['candidate']['mae'])
+        load.assert_not_called()
+        fit.assert_not_called()
+        run = model_registry.configure_tracking().get_run(result['run_id'])
+        self.assertEqual(run.info.status, 'FINISHED')
+        self.assertEqual(run.data.tags['deployment_status'], 'deferred')
+
+    def test_fine_tune_missing_production_returns_failure(self):
+        result = training.fine_tune(self._retraining_rows())
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['failure_code'], 'missing_production')
+        self.assertFalse(result['promoted'])
+        self.assertEqual(model_registry.configure_tracking().get_run(result['run_id']).info.status, 'FAILED')
+
+    def test_fine_tune_training_error_returns_failure_and_preserves_production(self):
+        self._register_retraining_model()
+        with patch.object(keras.Model, 'fit', side_effect=RuntimeError('training interrupted')):
+            result = training.fine_tune(self._retraining_rows())
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['failure_code'], 'training_failed')
+        self.assertEqual(result['failure_reason'], 'training interrupted')
+        self.assertEqual(result['model_version'], 'v1')
+        self.assertEqual(str(model_registry.current_version().version), '1')
+        run = model_registry.configure_tracking().get_run(result['run_id'])
+        self.assertEqual(run.info.status, 'FAILED')
+        self.assertEqual(run.data.tags['failure_code'], 'training_failed')
+
+    def test_failure_after_promotion_reports_actual_registered_version(self):
+        self._register_retraining_model()
+        original_log = training.mlflow.log_dict
+
+        def fail_deployment_record(value, artifact_file, **kwargs):
+            if artifact_file == 'deployment_result.json':
+                raise RuntimeError('result write failed')
+            return original_log(value, artifact_file, **kwargs)
+
+        with patch.object(training.mlflow, 'log_dict', side_effect=fail_deployment_record):
+            result = training.fine_tune(self._retraining_rows())
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(result['promoted'])
+        self.assertEqual(result['version'], '2')
+        self.assertEqual(result['model_version'], 'v2')
+        self.assertEqual(str(model_registry.current_version().version), '2')
+        self.assertEqual(result['failure_reason'], 'result write failed')
+
+    def test_fine_tune_tracking_failure_is_returned(self):
+        with patch.object(model_registry, 'configure_experiment', side_effect=RuntimeError('offline')):
+            result = training.fine_tune(self._retraining_rows())
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['failure_code'], 'tracking_failed')
+        self.assertIsNone(result['run_id'])
+
+
 
 if __name__ == '__main__':
     unittest.main()
