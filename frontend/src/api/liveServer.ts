@@ -158,6 +158,8 @@ interface ModelsBody {
 
 interface LogEvent {
   time: string
+  /** time 에 서버 시간대를 붙인 시각 (컨테이너는 UTC) */
+  at?: string
   tag: string
   message: string
 }
@@ -475,7 +477,7 @@ function mapModels(body: ModelsBody, gateMae: number): ServerState['models'] {
 
 function mapLogs(events: readonly LogEvent[]): LogLine[] {
   return events.map((e) => ({
-    at: toDemo(e.time),
+    at: toDemo(e.at ?? e.time),
     tag: LOG_TAGS.has(e.tag as LogTag) ? (e.tag as LogTag) : 'INFO',
     message: e.message,
     highlight: e.tag === 'OK' || /재학습 시작|승격|승인|되돌림/.test(e.message),
@@ -774,7 +776,7 @@ export async function runScenario(key: ScenarioKey): Promise<PipelineRun> {
     modelsReadAt = 0
     await refreshAll()
     const tail = await request<LogEvent[]>('/logs/events?limit=40')
-      .then((events) => mapLogs(events.filter((e) => serverMs(e.time) >= startedMs)))
+      .then((events) => mapLogs(events.filter((e) => serverMs(e.at ?? e.time) >= startedMs)))
       .catch(() => [] as LogLine[])
     const run = buildRun(id, d, t, step.expectKind, step.expectText, tail, runNo)
     patch((s) => ({

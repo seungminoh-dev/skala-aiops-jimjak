@@ -79,6 +79,11 @@ class LogsRouterTest(unittest.TestCase):
         self.assertEqual(items[0]["message"], "드리프트 점검 정상")
         self.assertIn("Traceback", items[3]["message"])
 
+    def test_events_carry_time_with_server_offset(self):
+        e = logs_router.events(limit=1, tags=None)[0]
+        self.assertTrue(e["at"].startswith("2026-10-02T09:41:00"))
+        self.assertRegex(e["at"], r"[+-]\d{2}:\d{2}$")
+
     def test_events_filter_and_limit(self):
         self.assertEqual([e["tag"] for e in logs_router.events(limit=100, tags="warn, alert")], ["WARN", "ALERT"])
         self.assertEqual(len(logs_router.events(limit=2, tags=None)), 2)
