@@ -735,6 +735,10 @@ export interface Batch {
   deployedVersion: ModelVersionId | null
   /** 게이트 불합격으로 유지한 버전 */
   keptVersion: ModelVersionId | null
+  /** 게이트 불합격이지만 새 모델이 더 나아 사람 승인을 기다린다 (실서버) */
+  needsApproval?: boolean
+  /** 같은 데이터로 이미 불합격해 재학습을 보류했다 (실서버) */
+  held?: boolean
 }
 
 /** 감시 창 한 점 (최근 21편, 완료 순) */
@@ -791,6 +795,12 @@ export interface GateRecord {
   passed: boolean
   /** 결과 (예: "v2 배포", "v1 유지") */
   decision: string
+  /** 학습 실행 id (실서버 MLflow run) — 승인할 때 쓴다 */
+  runId?: string
+  /** 불합격이지만 지금 모델보다 나아 사람 승인을 기다린다 */
+  needsApproval?: boolean
+  /** 사람이 승인해 적용한 버전 (예: "v3") */
+  approvedVersion?: string | null
 }
 
 export interface LogLine {
@@ -801,7 +811,8 @@ export interface LogLine {
   highlight: boolean
 }
 
-const THRESHOLD = 6.3
+// 기획서 ③: 정상 21편 MAE 상위 5%(3.97분)와 배포 기준 5분 중 큰 값
+const THRESHOLD = 5.0
 
 // prettier-ignore
 const BATCH_SEEDS: Array<[hhmm: string, mae: number, consecutive: number, verdict: VerdictKind, eventName: string | null, version: ModelVersionId, deployed: ModelVersionId | null]> = [
@@ -810,7 +821,7 @@ const BATCH_SEEDS: Array<[hhmm: string, mae: number, consecutive: number, verdic
   ['0730', 7.4, 0, 'alert_only',       '컨베이어 고장', 'v1', null],
   ['0750', 6.9, 1, 'warn',             null,           'v1', null],
   ['0810', 7.9, 2, 'retrain_promoted', null,           'v1', 'v2'],
-  ['0830', 5.1, 0, 'ok',               null,           'v2', null],
+  ['0830', 4.8, 0, 'ok',               null,           'v2', null],
   ['0850', 4.6, 0, 'ok',               null,           'v2', null],
   ['0910', 4.4, 0, 'ok',               null,           'v2', null],
   ['0930', 3.8, 0, 'ok',               null,           'v2', null],
@@ -934,31 +945,31 @@ const gates: GateRecord[] = [
 
 // prettier-ignore
 const LOG_SEEDS: Array<[hhmm: string, tag: LogTag, message: string, highlight?: boolean]> = [
-  ['0650', 'OK',    '배치 1 · 최근 21편 MAE 3.9 / 임계값 6.3 · 정상'],
-  ['0710', 'OK',    '배치 2 · 최근 21편 MAE 4.3 / 임계값 6.3 · 정상'],
+  ['0650', 'OK',    '배치 1 · 최근 21편 MAE 3.9 / 임계값 5.0 · 정상'],
+  ['0710', 'OK',    '배치 2 · 최근 21편 MAE 4.3 / 임계값 5.0 · 정상'],
   ['0722', 'ALERT', '이벤트 표시 · T2-17 컨베이어 고장'],
-  ['0730', 'ALERT', '배치 3 · MAE 7.4 / 6.3 · 알림만, 이벤트 표시 편 포함 · 재학습하지 않음'],
-  ['0750', 'WARN',  '배치 4 · MAE 6.9 / 6.3 · 주의, 연속 초과 1/2'],
-  ['0810', 'WARN',  '배치 5 · MAE 7.9 / 6.3 · 연속 초과 2/2'],
+  ['0730', 'ALERT', '배치 3 · MAE 7.4 / 5.0 · 알림만, 이벤트 표시 편 포함 · 재학습하지 않음'],
+  ['0750', 'WARN',  '배치 4 · MAE 6.9 / 5.0 · 주의, 연속 초과 1/2'],
+  ['0810', 'WARN',  '배치 5 · MAE 7.9 / 5.0 · 연속 초과 2/2'],
   ['0810', 'INFO',  '재학습 시작 · v1에서 이어서 fine-tuning 10 epoch', true],
   ['0812', 'INFO',  '재학습 완료 · 검증 MAE 4.1', true],
   ['0812', 'CHECK', '게이트 · 검증 MAE 4.1 ≤ 5.0 · 통과'],
   ['0812', 'CHECK', '게이트 · 단순 방법 5.2 → 4.1 (21% 개선) · 통과'],
   ['0812', 'CHECK', '게이트 · 현재 모델 v1 7.6 → 4.1 · 통과'],
   ['0813', 'OK',    'v2 배포 · 운영 버전 v1 → v2', true],
-  ['0830', 'OK',    '배치 6 · MAE 5.1 / 6.3 · 정상'],
-  ['0850', 'OK',    '배치 7 · MAE 4.6 / 6.3 · 정상'],
-  ['0910', 'OK',    '배치 8 · MAE 4.4 / 6.3 · 정상'],
+  ['0830', 'OK',    '배치 6 · MAE 4.8 / 5.0 · 정상'],
+  ['0850', 'OK',    '배치 7 · MAE 4.6 / 5.0 · 정상'],
+  ['0910', 'OK',    '배치 8 · MAE 4.4 / 5.0 · 정상'],
   ['0914', 'FAIL',  '도착편 API 응답 없음 · 5초 초과, 다시 시도 1/3'],
   ['0915', 'INFO',  '도착편 API 다시 연결'],
-  ['0930', 'OK',    '배치 9 · MAE 3.8 / 6.3 · 정상'],
-  ['0950', 'OK',    '배치 10 · MAE 4.5 / 6.3 · 정상'],
+  ['0930', 'OK',    '배치 9 · MAE 3.8 / 5.0 · 정상'],
+  ['0950', 'OK',    '배치 10 · MAE 4.5 / 5.0 · 정상'],
   ['0952', 'ALERT', '이벤트 표시 · T1-17 컨베이어 고장'],
   ['1008', 'INFO',  '예측 발행 · KE082 T2-08 57분 (50분 초과)'],
-  ['1010', 'OK',    '배치 11 · MAE 4.0 / 6.3 · 정상'],
+  ['1010', 'OK',    '배치 11 · MAE 4.0 / 5.0 · 정상'],
   ['1018', 'INFO',  '예측 발행 · SC4609 T1-19 52분 (50분 초과)'],
   ['1028', 'INFO',  '예측 발행 · UA892 T1-03 41분'],
-  ['1030', 'OK',    '배치 12 · MAE 4.2 / 6.3 · 정상'],
+  ['1030', 'OK',    '배치 12 · MAE 4.2 / 5.0 · 정상'],
 ]
 
 const toLog = ([hhmm, tag, message, highlight]: [string, LogTag, string, boolean?]): LogLine => ({
@@ -970,7 +981,7 @@ const toLog = ([hhmm, tag, message, highlight]: [string, LogTag, string, boolean
 
 /** 모델 모니터링 화면 전부 */
 export const monitoring = {
-  /** 드리프트 임계값 (분) — 차트 주황 점선 "임계값 6.3분" */
+  /** 드리프트 임계값 (분) — 차트 주황 점선 "임계값 5.0분" */
   threshold: THRESHOLD,
   /** 게이트 기준 (분) — 차트 회색 점선 "게이트 5분" */
   gateMae: 5,
@@ -980,7 +991,7 @@ export const monitoring = {
   batches,
   /** 감시 창 21점 (예측 vs 실제) */
   window: windowPoints,
-  /** 지금 판정 문장: "최근 21편 오차 4.2분 · 임계값 6.3분 · 연속 초과 0/2 · 판정 정상(점)" */
+  /** 지금 판정 문장: "최근 21편 오차 4.2분 · 임계값 5.0분 · 연속 초과 0/2 · 판정 정상(점)" */
   verdictNow: {
     at: at('1030'),
     windowSize: 21,
@@ -997,7 +1008,7 @@ export const monitoring = {
   /** 숫자 줄: 운영 버전 · 창 MAE / 임계값 · 연속 초과 n/2 · 응답 시간 p95 */
   figureRow: [
     { label: '운영 버전', value: 'v2', mono: true },
-    { label: '창 MAE / 임계값', value: '4.2 / 6.3', unit: '분' },
+    { label: '창 MAE / 임계값', value: '4.2 / 5.0', unit: '분' },
     { label: '연속 초과', value: '0/2' },
     { label: '응답 시간 p95', value: '182', unit: 'ms' },
   ] as FigureItem[],
@@ -1037,7 +1048,7 @@ export interface PipelineStep {
   /** 단계 이름 (body-sm) */
   name: string
   state: StepState
-  /** 결과 한 줄 (mono-sm ink-subtle, 예: "MAE 7.9 > 6.3", "연속 2/2", "v2"). 대기·건너뜀·진행 중이면 null */
+  /** 결과 한 줄 (mono-sm ink-subtle, 예: "MAE 7.9 > 5.0", "연속 2/2", "v2"). 대기·건너뜀·진행 중이면 null */
   result: string | null
   /** 재학습·배포 단계 — 완료 점을 primary 로 */
   systemAction: boolean
@@ -1085,7 +1096,7 @@ const scenarios: Scenario[] = [
   { id: 'conveyor_fault', name: '컨베이어 고장', category: 'alert_only', expected: '알림만', runs: 4 },
   { id: 'expansion', name: '수취대·터미널 증설', category: 'retrain', expected: '주의 → 재학습', runs: 1 },
   { id: 'opening_chaos', name: '개장 초기 혼란', category: 'judgement', expected: '주의 → 재학습', runs: 1 },
-  { id: 'process_change', name: '처리 방식 변경', category: 'retrain', expected: '주의 → 재학습', runs: 2 },
+  { id: 'process_change', name: '처리 방식 변경', category: 'retrain', expected: '주의 → 재학습 → 게이트 불합격', runs: 2 },
 ]
 
 const PASSED_GATE: GateCheck[] = gates[1].checks
@@ -1099,7 +1110,7 @@ const runs: PipelineRun[] = [
     scenarioName: '정상',
     at: at('1002'),
     steps: steps({
-      drift: ['done', 'MAE 4.0 ≤ 6.3'],
+      drift: ['done', 'MAE 4.0 ≤ 5.0'],
       event: ['done', '이벤트 없음'],
       consecutive: ['done', '연속 0/2'],
       retrain: ['skipped', null],
@@ -1112,7 +1123,7 @@ const runs: PipelineRun[] = [
     matched: true,
     logTail: [
       toLog(['1002', 'CHECK', '시나리오 정상 · 21편 주입']),
-      toLog(['1002', 'OK', 'MAE 4.0 / 6.3 · 정상']),
+      toLog(['1002', 'OK', 'MAE 4.0 / 5.0 · 정상']),
     ],
   },
   {
@@ -1121,7 +1132,7 @@ const runs: PipelineRun[] = [
     scenarioName: '컨베이어 고장',
     at: at('1008'),
     steps: steps({
-      drift: ['done', 'MAE 7.4 > 6.3'],
+      drift: ['done', 'MAE 7.4 > 5.0'],
       event: ['done', '컨베이어 고장 6편'],
       consecutive: ['skipped', null],
       retrain: ['skipped', null],
@@ -1135,7 +1146,7 @@ const runs: PipelineRun[] = [
     logTail: [
       toLog(['1008', 'CHECK', '시나리오 컨베이어 고장 · 21편 주입']),
       toLog(['1008', 'ALERT', '이벤트 표시 6편 · 컨베이어 고장']),
-      toLog(['1008', 'ALERT', 'MAE 7.4 / 6.3 · 알림만, 재학습하지 않음']),
+      toLog(['1008', 'ALERT', 'MAE 7.4 / 5.0 · 알림만, 재학습하지 않음']),
     ],
   },
   {
@@ -1144,7 +1155,7 @@ const runs: PipelineRun[] = [
     scenarioName: '인력 부족 장기화',
     at: at('1015'),
     steps: steps({
-      drift: ['done', 'MAE 7.9 > 6.3'],
+      drift: ['done', 'MAE 7.9 > 5.0'],
       event: ['done', '이벤트 없음'],
       consecutive: ['done', '연속 2/2'],
       retrain: ['done', '검증 MAE 4.1'],
@@ -1156,7 +1167,7 @@ const runs: PipelineRun[] = [
     outcome: { kind: 'retrain_promoted', deployedVersion: 'v2' },
     matched: true,
     logTail: [
-      toLog(['1015', 'WARN', 'MAE 7.9 / 6.3 · 연속 초과 2/2']),
+      toLog(['1015', 'WARN', 'MAE 7.9 / 5.0 · 연속 초과 2/2']),
       toLog(['1015', 'INFO', '재학습 시작 · v1에서 이어서 fine-tuning 10 epoch', true]),
       toLog(['1017', 'INFO', '재학습 완료 · 검증 MAE 4.1', true]),
       toLog(['1017', 'CHECK', '게이트 3/3 통과']),
@@ -1173,7 +1184,7 @@ const runStates: { running: PipelineRun; gateFailed: PipelineRun } = {
     scenarioName: '수취대·터미널 증설',
     at: at('1029'),
     steps: steps({
-      drift: ['done', 'MAE 8.1 > 6.3'],
+      drift: ['done', 'MAE 8.1 > 5.0'],
       event: ['done', '이벤트 없음'],
       consecutive: ['done', '연속 2/2'],
       retrain: ['running', null],
@@ -1183,7 +1194,7 @@ const runStates: { running: PipelineRun; gateFailed: PipelineRun } = {
     outcome: null,
     matched: null,
     logTail: [
-      toLog(['1029', 'WARN', 'MAE 8.1 / 6.3 · 연속 초과 2/2']),
+      toLog(['1029', 'WARN', 'MAE 8.1 / 5.0 · 연속 초과 2/2']),
       toLog(['1029', 'INFO', '재학습 시작 · v1에서 이어서 fine-tuning 10 epoch', true]),
     ],
   },
@@ -1193,7 +1204,7 @@ const runStates: { running: PipelineRun; gateFailed: PipelineRun } = {
     scenarioName: '처리 방식 변경',
     at: '202609301638',
     steps: steps({
-      drift: ['done', 'MAE 8.3 > 6.3'],
+      drift: ['done', 'MAE 8.3 > 5.0'],
       event: ['done', '이벤트 없음'],
       consecutive: ['done', '연속 2/2'],
       retrain: ['done', '검증 MAE 5.6'],

@@ -1,9 +1,9 @@
 /**
  * 서버 상태 → 화면이 쓰는 모양. 순수 함수라 실제 서버로 바꿔도 그대로 쓸 수 있다.
  */
-import { MIN_UPLOAD_ROWS } from '@/api/mockServer'
-import { flightsAt, nextPredictionAt } from '@/api/ops'
-import { DATA_FILES, SCENARIO_SPECS } from '@/api/scenarioData'
+import { MIN_UPLOAD_ROWS } from '@/api/csv'
+import type { T103Row } from '@/api/lineData'
+import { SCENARIO_SPECS } from '@/api/scenarioData'
 import type {
   BatchRecord,
   DatasetView,
@@ -17,7 +17,7 @@ import type {
   VerdictInput,
 } from '@/api/types'
 import { csvColumns, lab as MOCK_LAB } from '@/design/mock'
-import { fmtDecimal } from '@/lib/format'
+import { addMinutes, fmtDecimal } from '@/lib/format'
 
 /** 배치 한 번 → verdictStatus 입력 (창이 덜 찼으면 판정 보류) */
 export function batchVerdictInput(b: BatchRecord, consecutiveLimit: number): VerdictInput {
@@ -30,6 +30,8 @@ export function batchVerdictInput(b: BatchRecord, consecutiveLimit: number): Ver
     eventName: b.eventName,
     deployedVersion: b.deployedVersion,
     keptVersion: b.keptVersion,
+    needsApproval: b.needsApproval,
+    held: b.held,
   }
 }
 
@@ -94,23 +96,36 @@ export function buildMonitoringView(
   }
 }
 
-/** 다음 예측은 실시간 데모 시각 기준 (시각 지정과 상관없이 — 전환은 지금 일어나므로) */
+/**
+ * 다음 예측 = T1-03 편 중 예측 시점(도착 예정 1시간 전)이 아직 오지 않은 가장 이른 편.
+ * 실시간 데모 시각 기준 (시각 지정과 상관없이 — 운영 버전 전환은 지금 일어나므로)
+ */
 export function buildModelsView(
   models: ServerState['models'],
   gateMae: number,
   liveNow: ServerState['clock']['liveNow'],
+  rows: readonly T103Row[],
 ): ModelsView {
-  const next = nextPredictionAt(flightsAt(liveNow, models.history), liveNow)
+  const next =
+    rows
+      .map((r) => ({ at: addMinutes(r[3], -60), flightId: r[0] }))
+      .filter((f) => f.at >= liveNow)
+      .sort((a, b) => a.at.localeCompare(b.at))[0] ?? null
   return {
+    name: models.name,
     production: models.production,
     versions: models.versions,
     gates: models.gates,
     gateMae,
-    nextPrediction: next ? { at: next.at, flightId: next.flightId } : null,
+    nextPrediction: next,
   }
 }
 
-export function buildScenariosView(lab: ServerState['lab'], batches: readonly BatchRecord[]): ScenariosView {
+export function buildScenariosView(
+  lab: ServerState['lab'],
+  batches: readonly BatchRecord[],
+  files: ServerState['scenarioFiles'],
+): ScenariosView {
   const scenarios = MOCK_LAB.scenarios.map((sc) => {
     const spec = SCENARIO_SPECS[sc.id]
     const cursor = lab.cursors[sc.id] % spec.steps.length
@@ -118,7 +133,8 @@ export function buildScenariosView(lab: ServerState['lab'], batches: readonly Ba
       ...sc,
       runs: lab.runCounts[sc.id],
       serverId: spec.serverId,
-      dataFile: DATA_FILES[sc.id].summary.fileName,
+      data: files[spec.serverId] ?? null,
+      dataFile: spec.dataFile,
       cursor,
       cycle: spec.steps.length,
       nextExpected: spec.steps[cursor].expectText,
@@ -151,6 +167,7 @@ export function buildHealthView(
 ): HealthView {
   return {
     status: health.status,
+    model: health.model,
     modelVersion: production,
     lastUpdatedAt: health.lastUpdatedAt,
     refreshSec: health.refreshSec,

@@ -3,6 +3,7 @@ import datetime as dt
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from serving_app.monitoring import drift_detector as dd
@@ -154,6 +155,24 @@ class CheckAndTriggerTest(unittest.TestCase):
             result = rt.check_and_trigger(window(8))
         self.assertFalse(result["retrain"]["ok"])
         self.assertEqual(result["retrain"]["error"], "interrupted")
+
+    def test_history_keeps_serving_version_and_retrain_outcome(self):
+        from serving_app import model_loader
+
+        with patch.object(model_loader, "_model_cache", SimpleNamespace(version="v1")):
+            better = {"status": "rejected", "promoted": False, "passed": False, "mae": 5.5, "current_mae": 6.5,
+                      "run_id": "abc123", "failed_reasons": ["MAE가 5분을 초과했습니다."]}
+            result, _ = self.retrain_twice(better, file="a.csv")
+            self.assertEqual(result["model_version"], "v1")
+            last = dd.STATE.history[-1]
+            self.assertEqual(last["model_version"], "v1")
+            self.assertEqual(last["outcome"]["run_id"], "abc123")
+            self.assertTrue(last["outcome"]["needs_approval"])
+            self.assertFalse(last["outcome"]["held"])
+            self.assertNotIn("outcome", result)  # 응답에는 retrain 으로 이미 실린다
+
+            self.retrain_twice(better, file="a.csv")  # 같은 파일 → 보류
+            self.assertTrue(dd.STATE.history[-1]["outcome"]["held"])
 
     def test_alert_only_never_retrains(self):
         tagged = window(9)

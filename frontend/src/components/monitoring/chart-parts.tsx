@@ -61,7 +61,7 @@ export interface EdgeLabel {
   tone?: 'subtle' | 'signal'
 }
 
-/** 수평 기준선의 오른쪽 끝에 이름을 단다: "임계값 6.3분", "게이트 5분", [50분] */
+/** 수평 기준선의 오른쪽 끝에 이름을 단다: "임계값 5.0분", "게이트 5분", [50분] */
 export function RightEdgeLabels({ labels }: { labels: readonly EdgeLabel[] }) {
   const plot = usePlotArea()
   const yScale = useYAxisScale()

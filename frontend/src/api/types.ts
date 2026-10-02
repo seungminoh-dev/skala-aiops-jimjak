@@ -123,8 +123,15 @@ export interface Latency {
   windowLabel: string
 }
 
+/**
+ * 운영 모델 준비 상태 (GET /health). ready 운영 중 · loading 아직 안 불러옴(lazy 첫 예측 전)
+ * training 운영 모델이 없어 서버가 기본 모델(v1)을 학습 중 · failed 그 학습이 실패
+ */
+export type ModelReadiness = 'ready' | 'loading' | 'training' | 'failed'
+
 export interface HealthView {
   status: ServerStatus
+  model: ModelReadiness
   /** 운영 버전 (상단 바 version-badge) */
   modelVersion: ModelVersionId
   /** 마지막 갱신 — 연결 끊김일 때 "10:52 기준" */
@@ -239,7 +246,7 @@ export interface BatchRecord extends Batch {
 }
 
 export interface MonitoringView {
-  /** 드리프트 임계값 6.3 (분) */
+  /** 드리프트 임계값 5.0 (분) — 실서버는 /monitoring/status threshold */
   threshold: number
   /** 게이트 기준 5 (분) */
   gateMae: number
@@ -265,6 +272,8 @@ export interface MonitoringView {
 }
 
 export interface ModelsView {
+  /** MLflow 레지스트리 모델 이름 */
+  name: string
   /** 운영 버전 */
   production: ModelVersionId
   /** 모델 버전 (배포된 것만. 오래된 것 → 최근) */
@@ -290,9 +299,22 @@ export type ServerScenarioId =
 /** runScenario 는 둘 다 받는다 (bhs_failure = conveyor_fault, terminal_open = opening_chaos) */
 export type ScenarioKey = ScenarioId | ServerScenarioId
 
+/** 시나리오 데이터 파일 요약 (서버 GET /scenarios) */
+export interface ScenarioFileSummary {
+  fileName: string
+  rows: number
+  eventRows: number
+  /** 보낼 수 있는 배치 수 (41편씩, 21편 간격) */
+  batches: number
+  waitMeanMin: number | null
+  over50Rows: number
+}
+
 export interface ScenarioView extends Scenario {
   /** 서버 id (bhs_failure …) */
   serverId: ServerScenarioId
+  /** 데이터 파일 요약 (서버에서 읽기 전이면 null) */
+  data: ScenarioFileSummary | null
   /** 데이터 파일 (staff_shortage_2w.csv …) */
   dataFile: string
   /** 다음 실행이 몇 번째 단계인가 (0부터). 재학습까지 한 바퀴 돌면 0으로 */
@@ -359,7 +381,7 @@ export interface UploadResponse {
   rows: number
 }
 
-/* ───────────────────────── 서버 상태 전체 (mockServer) ───────────────────────── */
+/* ───────────────────────── 서버 상태 전체 (liveServer) ───────────────────────── */
 
 export interface ProductionChange {
   at: Ymdhm
@@ -375,11 +397,15 @@ export interface ServerState {
   }
   health: {
     status: ServerStatus
+    /** 운영 모델 준비 상태 — 첫 실행이면 서버가 기본 모델을 학습하는 동안 training */
+    model: ModelReadiness
     lastUpdatedAt: Ymdhm
     refreshSec: number
     latency: Latency
   }
   models: {
+    /** MLflow 레지스트리 모델 이름 (GET /models model_name) */
+    name: string
     production: ModelVersionId
     versions: ModelVersion[]
     gates: GateRecord[]
@@ -409,4 +435,6 @@ export interface ServerState {
     preview: CsvRow[]
     uploading: boolean
   }
+  /** 시나리오 데이터 파일 요약 (GET /scenarios) */
+  scenarioFiles: Partial<Record<ServerScenarioId, ScenarioFileSummary>>
 }

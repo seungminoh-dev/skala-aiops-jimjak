@@ -63,7 +63,7 @@ def verify(base_url, csv_path, expected_version=None):
 
 def main():
     parser = argparse.ArgumentParser(description='API·버전·Lazy/Eager 예측 시간 검증 (새 서버 프로세스에서 실행)')
-    parser.add_argument('--url', default='http://127.0.0.1:8000')
+    parser.add_argument('--url', default='http://127.0.0.1:8077')
     parser.add_argument('--csv', default=settings.training_data_path)
     parser.add_argument('--expected-version')
     parser.add_argument('--output', help='검증 결과 JSON 저장 위치')

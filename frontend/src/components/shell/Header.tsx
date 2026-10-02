@@ -1,10 +1,10 @@
-import { ArrowCounterClockwiseIcon, DatabaseIcon, PlugsConnectedIcon, PlugsIcon } from '@phosphor-icons/react'
+import { ArrowCounterClockwiseIcon, CircleNotchIcon, PlugsConnectedIcon, PlugsIcon, WarningIcon } from '@phosphor-icons/react'
 
 import { LIVE_CAROUSEL, PAGE_LABEL, scopeOf, TENANT, type PageKey } from '@/app/routes'
-import { actions, reopenAllAlerts, useDemoClock, useHealth } from '@/api'
+import { actions, reopenAllAlerts, useDemoClock, useHealth, type ModelReadiness } from '@/api'
 import { ConfirmDialog } from '@/components/app/ConfirmDialog'
 import { Button } from '@/components/ui/button'
-import { fmtClock } from '@/lib/format'
+import { carouselName, fmtClock, type ServerStatus } from '@/lib/format'
 
 /**
  * 헤더 56px — DESIGN.md "4. 배치" · "6. 데모 조작".
@@ -23,7 +23,7 @@ export function Header({ page }: { page: PageKey }) {
         {scope === 'carousel' && (
           <>
             <span className="flex items-center gap-1.5 text-gray-900">
-              <span className="type-mono-14">{LIVE_CAROUSEL}</span> 수취대
+              {carouselName(LIVE_CAROUSEL)} 수취대
             </span>
             <Slash />
           </>
@@ -50,9 +50,9 @@ export function Header({ page }: { page: PageKey }) {
             void actions.resetDemo()
           }}
         >
-          <p className="type-copy-14 text-gray-900">시나리오로 쌓인 기록과 닫은 알림을 되돌리고 처음 상태로 돌아갑니다.</p>
+          <p className="type-copy-14 text-gray-900">시나리오로 쌓인 판정 기록과 닫은 알림을 비우고, 운영 모델을 처음 버전으로 되돌려 데모 시각 10:30 으로 돌아갑니다.</p>
         </ConfirmDialog>
-        <DataStatus status={health.status} />
+        <DataStatus status={health.status} model={health.model} />
       </div>
     </header>
   )
@@ -66,7 +66,21 @@ function Slash() {
   )
 }
 
-function DataStatus({ status }: { status: 'connected' | 'disconnected' | 'mock' }) {
+function DataStatus({ status, model }: { status: ServerStatus; model: ModelReadiness }) {
+  if (status === 'connected' && model === 'training')
+    return (
+      <span className="flex items-center gap-1.5 type-label-13 text-amber-900">
+        <CircleNotchIcon size={16} className="animate-spin" />
+        모델 학습 중
+      </span>
+    )
+  if (status === 'connected' && model === 'failed')
+    return (
+      <span className="flex items-center gap-1.5 type-label-13 text-red-900">
+        <WarningIcon size={16} />
+        모델 없음
+      </span>
+    )
   if (status === 'connected')
     return (
       <span className="flex items-center gap-1.5 type-label-13 text-gray-900">
@@ -74,17 +88,10 @@ function DataStatus({ status }: { status: 'connected' | 'disconnected' | 'mock' 
         API 연결됨
       </span>
     )
-  if (status === 'disconnected')
-    return (
-      <span className="flex items-center gap-1.5 type-label-13 text-red-900">
-        <PlugsIcon size={16} />
-        연결 끊김
-      </span>
-    )
   return (
-    <span className="flex items-center gap-1.5 type-label-13 text-gray-900">
-      <DatabaseIcon size={16} />
-      목업 데이터
+    <span className="flex items-center gap-1.5 type-label-13 text-red-900">
+      <PlugsIcon size={16} />
+      연결 끊김
     </span>
   )
 }

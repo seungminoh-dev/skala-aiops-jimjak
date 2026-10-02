@@ -18,6 +18,7 @@ import { LIVE_CAROUSEL, PAGE_LABEL, PAGE_PATH, scopeOf, TENANT, type PageKey } f
 import { MascotMark } from '@/components/mascot/Mascot'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { cn } from '@/lib/cn'
+import { carouselName } from '@/lib/format'
 import { SPRING } from '@/lib/motion'
 
 import { Avatars } from './Avatars'
@@ -91,9 +92,8 @@ export function Sidebar({
                 to={c.live ? PAGE_PATH.overview : `${PAGE_PATH.carousels}?focus=${c.id}`}
                 active={c.live ? undefined : page === 'carousels' && focus === c.id}
                 layoutGroup="nav-fav"
-                label={c.id}
-                mono
-                title={`${c.id} 수취대 ${TIER_LABEL[c.tier]}`}
+                label={carouselName(c.id)}
+                title={`${carouselName(c.id)} 수취대 ${TIER_LABEL[c.tier]}`}
                 icon={<CarouselIcon tier={c.tier} />}
                 trailing={<Avatars names={c.owners} size={18} />}
               />
@@ -104,8 +104,7 @@ export function Sidebar({
             <NavItem to={PAGE_PATH.control} label="터미널 전체" icon={<ArrowLeftIcon size={16} className="shrink-0" />} end />
             <div className="flex items-center gap-2 px-3 pt-3 pb-1">
               {live && <CarouselIcon tier={live.tier} />}
-              <span className="type-mono-14 font-medium text-gray-1000">{LIVE_CAROUSEL}</span>
-              <span className="type-label-14 font-medium text-gray-1000">수취대</span>
+              <span className="type-label-14 font-medium text-gray-1000">{carouselName(LIVE_CAROUSEL)} 수취대</span>
             </div>
             {CAROUSEL_GROUPS.map((group) => (
               <div key={group.label} className="flex flex-col gap-0.5">

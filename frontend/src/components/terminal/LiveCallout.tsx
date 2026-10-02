@@ -3,7 +3,7 @@ import { ArrowRightIcon } from '@phosphor-icons/react'
 import { TIER_LABEL, type CarouselTier, type NextFlight } from '@/api'
 import { MascotCarry } from '@/components/mascot/Mascot'
 import { cn } from '@/lib/cn'
-import { fmtClock } from '@/lib/format'
+import { carouselName, fmtClock } from '@/lib/format'
 
 import { CarouselIcon } from './CarouselIcon'
 
@@ -28,8 +28,7 @@ export function LiveCallout({
       <MascotCarry size="sm" />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex items-center gap-2">
-          <span className="type-mono-14 font-medium text-gray-1000">{liveId}</span>
-          <span className="type-label-14 font-medium text-gray-1000">수취대</span>
+          <span className="type-label-14 font-semibold text-gray-1000">{carouselName(liveId)} 수취대</span>
           <span className={cn('flex items-center gap-1 type-label-12', tier === 'alert' ? 'text-red-900' : 'text-gray-900')}>
             <CarouselIcon tier={tier} size={14} />
             {TIER_LABEL[tier]}

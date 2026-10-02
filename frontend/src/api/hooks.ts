@@ -1,12 +1,13 @@
 /**
- * 화면용 훅 — useSyncExternalStore 로 목업 서버(mockServer) 상태를 읽는다.
- * 화면은 이 훅과 actions 만 쓴다. 실제 서버로 바꿀 때는 mockServer 자리만 바꾼다.
+ * 화면용 훅 — useSyncExternalStore 로 실서버 어댑터(liveServer) 상태를 읽는다. 화면은 이 훅과 actions 만 쓴다.
+ * T1-03 데이터는 모두 짐작 FastAPI 에서 온다 (서버가 없으면 "연결 끊김"). 메인 화면의 다른 수취대는 terminal.ts 의 발표용 더미.
  *
  * 읽기는 동기(첫 로딩 없음). 쓰기(actions)는 Promise — 실패하면 ApiError(status, detail)로 거부한다.
  */
 import { useMemo, useSyncExternalStore } from 'react'
 
-import * as server from '@/api/mockServer'
+import { useLineRows } from '@/api/lineData'
+import * as server from '@/api/liveServer'
 import { buildLineDetail, computeOps } from '@/api/ops'
 import type {
   DatasetView,
@@ -98,7 +99,8 @@ export function useModels(): ModelsView {
   const models = useServer((s) => s.models)
   const gateMae = useServer((s) => s.monitor.gateMae)
   const liveNow = useServer((s) => s.clock.liveNow)
-  return useMemo(() => buildModelsView(models, gateMae, liveNow), [models, gateMae, liveNow])
+  const rows = useLineRows()
+  return useMemo(() => buildModelsView(models, gateMae, liveNow, rows), [models, gateMae, liveNow, rows])
 }
 
 /** 로그 (오래된 것 → 최신, 최신이 아래) */
@@ -112,7 +114,8 @@ export function useLogs(): LogLine[] {
 export function useScenarios(): ScenariosView {
   const lab = useServer((s) => s.lab)
   const batches = useServer((s) => s.monitor.batches)
-  return useMemo(() => buildScenariosView(lab, batches), [lab, batches])
+  const files = useServer((s) => s.scenarioFiles)
+  return useMemo(() => buildScenariosView(lab, batches, files), [lab, batches, files])
 }
 
 /** 현재 데이터 · 미리보기 · 업로드 중 */
@@ -124,19 +127,19 @@ export function useDataset(): DatasetView {
 /* ───────────────────────── 동작 ───────────────────────── */
 
 /**
- * 동작 — 모두 목업 서버로 간다.
+ * 동작 — 모두 실서버로 간다.
  * - runScenario(id): Promise<PipelineRun>. id 는 화면 id(conveyor_fault) · 서버 id(bhs_failure) 둘 다
  * - resetDemo(): Promise<void>. 시계까지 처음(10:30 실시간 · v1)으로
- * - promoteVersion(v): Promise<void>. 운영 버전 전환 + [INFO] manual promote 로그
+ * - promoteVersion(v): Promise<void>. 운영 버전 전환 (실서버: 보관 버전 되돌림 /models/rollback)
+ * - approveCandidate(runId): Promise<{ version }>. 승인 대기 후보 적용 (게이트 불합격이지만 지금 모델보다 나은 새 모델)
  * - uploadCsv(file): Promise<{ filename, rows }>. 실패 ApiError(400, detail)
  * - setAt(at | null): 시각 지정 / 실시간 (동기)
- * - setServerStatus(status): 데모용 연결 끊김 흉내 (동기)
  */
 export const actions = {
   runScenario: server.runScenario,
   resetDemo: server.resetDemo,
   promoteVersion: server.promoteVersion,
+  approveCandidate: server.approveCandidate,
   uploadCsv: server.uploadCsv,
   setAt: server.setAt,
-  setServerStatus: server.setServerStatus,
 } as const

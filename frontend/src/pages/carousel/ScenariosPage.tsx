@@ -25,10 +25,10 @@ import {
   type PipelineStep,
   type PipelineStepKey,
   type ScenarioCategory,
+  type ScenarioFileSummary,
   type ScenarioId,
   type ScenarioView,
 } from '@/api'
-import { DATA_FILES } from '@/api/scenarioData'
 import { notify, notifyDeploy, notifyError } from '@/components/app/notify'
 import { VerdictLabel } from '@/components/carousel/verdict'
 import { Card, PageHeader } from '@/components/common/Card'
@@ -122,7 +122,7 @@ export function ScenariosPage() {
           <div className="flex items-start justify-between gap-6">
             <div className="flex min-w-0 flex-col gap-3">
               <p className="type-copy-14 text-gray-1000">{STORY[scenario.id]}</p>
-              <DataFacts id={scenario.id} />
+              <DataFacts s={scenario} normal={sc.scenarios.find((x) => x.id === 'normal')?.data ?? null} />
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
               <Button size="lg" onClick={() => void start()} disabled={running}>
@@ -189,15 +189,16 @@ function CategoryChip({ category }: { category: ScenarioCategory }) {
   )
 }
 
-function DataFacts({ id }: { id: ScenarioId }) {
-  const d = DATA_FILES[id].summary
-  const normal = DATA_FILES.normal.summary
-  const diff = Math.round((d.waitMeanMin - normal.waitMeanMin) * 10) / 10
+/** 데이터 파일 숫자 — 서버 GET /scenarios (읽기 전이면 비운다) */
+function DataFacts({ s, normal }: { s: ScenarioView; normal: ScenarioFileSummary | null }) {
+  const d = s.data
+  if (!d || d.waitMeanMin == null) return <div className="h-5" />
+  const diff = normal?.waitMeanMin != null ? Math.round((d.waitMeanMin - normal.waitMeanMin) * 10) / 10 : null
   return (
     <div className="flex flex-wrap gap-x-6 gap-y-1 type-label-13 text-gray-900">
       <span>
         평균 처리 시간 <span className="font-medium text-gray-1000 num">{d.waitMeanMin}분</span>
-        {id !== 'normal' && (
+        {s.id !== 'normal' && diff !== null && (
           <span className={cn('num', diff > 0 ? 'text-red-900' : 'text-green-900')}>
             {' '}
             (평소보다 {diff > 0 ? '+' : ''}
@@ -429,8 +430,9 @@ function DataCard() {
       <div className="grid grid-cols-4 gap-6">
         <Fact label="파일" value={<span className="type-mono-13">{d.fileName}</span>} />
         <Fact label="행" value={`${d.rows.toLocaleString()}행`} />
-        <Fact label="평균 처리 시간" value={`${d.waitMeanMin}분`} />
-        <Fact label="50분 넘는 편" value={`${d.over50Rows}편`} />
+        {/* 실서버에서 다른 곳이 올린 파일은 서버가 요약을 주지 않는다 → — */}
+        <Fact label="평균 처리 시간" value={Number.isFinite(d.waitMeanMin) ? `${d.waitMeanMin}분` : '—'} />
+        <Fact label="50분 넘는 편" value={Number.isFinite(d.over50Rows) ? `${d.over50Rows}편` : '—'} />
       </div>
     </Card>
   )

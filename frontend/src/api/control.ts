@@ -84,17 +84,17 @@ export function useControlRoom(): ControlRoomView {
       })
     }
 
-    // 2. 오늘 성능 검사에 떨어져 보류된 새 모델 (그 뒤로 운영 모델이 바뀌지 않았으면)
+    // 2. 성능 검사엔 떨어졌지만 지금 모델보다 나아 사람 승인을 기다리는 새 모델 (기획서 ③ 재학습 "불합격 시")
     const lastGate = models.gates.at(-1)
-    const prod = models.versions.find((v) => v.version === models.production)
-    const today = carousel.now.slice(0, 8)
-    if (lastGate && !lastGate.passed && lastGate.at.slice(0, 8) === today && (!prod || prod.deployedAt < lastGate.at)) {
+    if (lastGate?.needsApproval) {
+      const current = lastGate.checks[2]?.value.split(' → ')[0]
       interventions.push({
         id: `gate-${lastGate.id}`,
         kind: 'gate',
-        title: `새 모델 ${lastGate.candidate} 적용이 보류됐어요`,
-        short: '새 모델 보류',
-        detail: `성능 검사를 통과하지 못해 기존 모델(${models.production})을 그대로 쓰고 있어요. 적용할지 판단이 필요해요`,
+        title: `새 모델 ${lastGate.candidate} 적용을 승인해 주세요`,
+        badge: '승인 필요',
+        short: '새 모델 승인',
+        detail: `성능 검사 기준은 못 넘었지만 지금 모델(${models.production}${current ? ` · 오차 ${current}분` : ''})보다 나아요. 적용할지 판단이 필요해요`,
         at: lastGate.at,
         to: 'models',
       })

@@ -85,7 +85,7 @@ const RUN_OPENING: PipelineRun = {
   scenarioId: 'opening_chaos',
   scenarioName: '개장 초기 혼란',
   steps: withSteps(RUN_NORMAL.steps, {
-    drift: ['done', 'MAE 6.8 > 6.3'],
+    drift: ['done', 'MAE 6.8 > 5.0'],
     event: ['done', '이벤트 없음'],
     consecutive: ['done', '연속 1/2'],
   }),
@@ -95,7 +95,7 @@ const RUN_OPENING: PipelineRun = {
   matched: false,
   logTail: [
     log('1030', 'CHECK', '시나리오 개장 초기 혼란 · 21편 주입'),
-    log('1030', 'WARN', 'MAE 6.8 / 6.3 · 주의, 연속 초과 1/2'),
+    log('1030', 'WARN', 'MAE 6.8 / 5.0 · 주의, 연속 초과 1/2'),
   ],
 }
 

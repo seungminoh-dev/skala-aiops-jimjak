@@ -227,6 +227,10 @@ export interface VerdictInput {
   deployedVersion?: string | null
   /** retrain_rejected: 유지한 버전 (예: 'v1') */
   keptVersion?: string | null
+  /** retrain_rejected: 새 모델이 기준은 못 넘었지만 지금 모델보다 나아 사람 승인을 기다린다 */
+  needsApproval?: boolean
+  /** retrain_rejected: 같은 데이터로 이미 불합격해 재학습을 보류했다 (새 데이터를 기다림) */
+  held?: boolean
 }
 
 /**
@@ -249,7 +253,9 @@ export function verdictStatus(v: VerdictInput): StatusDisplay {
       return { label: `재학습 · ${v.deployedVersion ?? 'v2'} 배포`, dot: 'primary', textClass: TEXT_MUTED }
     case 'retrain_rejected':
       return {
-        label: `재학습 · 게이트 불합격, ${v.keptVersion ?? 'v1'} 유지`,
+        label: v.held
+          ? `재학습 보류 · 새 데이터 대기, ${v.keptVersion ?? 'v1'} 유지`
+          : `재학습 · 게이트 불합격${v.needsApproval ? '(승인 대기)' : ''}, ${v.keptVersion ?? 'v1'} 유지`,
         dot: 'danger',
         textClass: 'text-danger-text',
       }
@@ -317,21 +323,27 @@ export function lineStatus(status: LineStatus): StatusDisplay {
   }
 }
 
-/* 서버 (상단 바) */
-export type ServerStatus = 'connected' | 'disconnected' | 'mock'
+/* 수취대 이름 */
 
 /**
- * 서버 상태. connected → "연결됨" success 점 · disconnected → "연결 끊김" danger 점
- * mock → "목업 데이터" 빈 점: 서버 없이 목업 API로 도는 동안은 "연결됨"이라고 하지 않는다
+ * 수취대 코드 → 화면 이름. 'T1-03' → 'T1 3번' (터미널 + 번호). 데이터·주소·키의 id 는 'T1-03' 그대로 둔다.
+ * 코드를 고정폭 글꼴로 그대로 보이면 'T1 - 03' 처럼 벌어져 읽혀서, 사람이 부르는 이름으로 바꿔 보인다.
  */
+export function carouselName(id: string): string {
+  const m = /^(T\d+)-0*(\d+)$/.exec(id)
+  return m ? `${m[1]} ${m[2]}번` : id
+}
+
+/* 서버 (상단 바) */
+export type ServerStatus = 'connected' | 'disconnected'
+
+/** 서버 상태. connected → "연결됨" success 점 · disconnected → "연결 끊김" danger 점 */
 export function serverStatus(status: ServerStatus): StatusDisplay {
   switch (status) {
     case 'connected':
       return { label: '연결됨', dot: 'success', textClass: TEXT_MUTED }
     case 'disconnected':
       return { label: '연결 끊김', dot: 'danger', textClass: TEXT_MUTED }
-    case 'mock':
-      return { label: '목업 데이터', dot: 'hollow', textClass: 'text-ink-subtle' }
   }
 }
 

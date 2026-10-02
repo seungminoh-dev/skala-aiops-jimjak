@@ -1,3 +1,13 @@
+"""
+로그 조회 — 대시보드(로그·모델 화면)용 읽기 전용 API. "aiops" 로거가 쓰는 aiops.log 를 그대로 노출한다.
+
+    GET /logs                    로그 파일 목록
+    GET /logs/events             aiops.log 를 줄 단위 사건으로 — [{time, at, tag, message}] (태그로 거르기, 최근 N개)
+                                 at = time 에 서버 시간대를 붙인 ISO 시각 (컨테이너는 UTC 라 화면이 시각을 맞출 때 쓴다)
+    GET /logs/latency            /predict 응답 시간 p50·p95·최대, 1초 초과 횟수 (serving_app/request_timing.py)
+    GET /logs/{파일명}?tail=N    파일 내용 (tail 을 주면 마지막 N줄만)
+"""
+import datetime as dt
 import os
 import re
 
@@ -70,7 +80,11 @@ def events(
     if tags:
         wanted = {t.strip().upper() for t in tags.split(",") if t.strip()}
         items = [e for e in items if e["tag"] in wanted]
-    return items[-limit:]
+    items = items[-limit:]
+    tz = dt.datetime.now().astimezone().tzinfo  # 로그 줄 시각은 서버 지역 시각
+    for e in items:
+        e["at"] = dt.datetime.strptime(e["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz).isoformat()
+    return items
 
 
 @router.get("/latency", summary="단건 예측 응답 시간 통계 조회",

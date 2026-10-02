@@ -48,7 +48,7 @@ import {
  * 배치별 MAE — DESIGN.md "차트".
  * x = 배치 순번, y = 창 MAE(분). 선 chart-actual 1.5px.
  * 점은 판정 색: 정상은 생략 · 주의 warning · 알림만 ink-subtle 빈 점 · 재학습(배포) primary · 게이트 불합격 danger · 판정 보류 빈 점.
- * 임계값 chart-threshold 1px 점선 + 오른쪽 끝 "임계값 6.3분" · 게이트 chart-reference 1px 점선 + "게이트 5분".
+ * 임계값 chart-threshold 1px 점선 + 오른쪽 끝 "임계값 5.0분" · 게이트 chart-reference 1px 점선 + "게이트 5분".
  * 새 버전 배포는 그 배치에 primary 1px 세로선 + 위에 mono-sm "v2".
  * 배포 세로선 위의 점(재학습 = primary)은 같은 색 선에 묻히므로 흰 테두리 1px 를 둘러 선 위로 띄운다.
  * 범례 점은 차트 점과 같은 4px (ChartMarkDot).
@@ -184,7 +184,7 @@ export function BatchMaeChart({ batches, threshold, gateMae, consecutiveLimit }:
 }
 
 /**
- * y 축 범위 — 데이터와 기준선(게이트 5분 · 임계값 6.3분)을 모두 담고 위아래로 0.5분 이상 띄운다.
+ * y 축 범위 — 데이터와 기준선(게이트 5분 · 임계값 5.0분)을 모두 담고 위아래로 0.5분 이상 띄운다.
  * 눈금은 1분 간격, 범위가 6분을 넘으면 2분 간격(눈금 글자 5~7개). 처음 배치 3개(3.9~4.3분)면 3~7분.
  * 컨베이어 고장처럼 MAE 가 크게 뛰면 범위가 따라 넓어진다(위 기준선은 그대로 보인다).
  */

@@ -6,7 +6,7 @@ import { fmtClock, fmtDecimal, NumUnit, verdictStatus, type VerdictInput, type Y
 
 /**
  * 판정 블록 — DESIGN.md "판정 블록 (모델 모니터링)". 제목 줄 바로 아래, 판정과 근거 수치를 한 덩어리로.
- *   첫 줄:  ● 정상 · 창 MAE 4.2분 / 임계값 6.3분 · 연속 초과 0/2 · 최근 21편, 10:30 기준
+ *   첫 줄:  ● 정상 · 창 MAE 4.2분 / 임계값 5.0분 · 연속 초과 0/2 · 최근 21편, 10:30 기준
  *   둘째 줄(caption ink-subtle): 운영 버전 v2   응답 시간 p95 182ms   마지막 판정 10:30 (가운뎃점 대신 간격)
  * - 판정 이름은 section-title, 점은 상태 표시 대응표 그대로. 창 MAE 숫자만 figure-value(KBO).
  * - 같은 수치를 두 번 쓰지 않는다: 연속 초과(1/2)·창 편수(13/21)는 근거 수치 쪽에만 두고 판정 이름에는 붙이지 않는다.

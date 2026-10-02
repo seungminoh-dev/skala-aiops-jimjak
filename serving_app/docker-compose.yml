@@ -2,7 +2,7 @@
 #   docker compose -f serving_app/docker-compose.yml build
 #   docker compose -f serving_app/docker-compose.yml run --rm init
 #   docker compose -f serving_app/docker-compose.yml up -d serving-app
-#   curl http://localhost:8000/health
+#   curl http://localhost:8077/health
 # UI: docker compose -f serving_app/docker-compose.yml up -d mlflow-ui  (http://localhost:5001)
 # 검증: docker compose -f serving_app/docker-compose.yml exec serving-app python scripts/verify_serving.py
 # Lazy/Eager: docker compose -f serving_app/docker-compose.yml run --rm init python scripts/measure_loading.py --output-dir /state/evidence
@@ -46,9 +46,9 @@ services:
   serving-app:
     <<: *runtime
     ports:
-      - '127.0.0.1:${SERVING_PORT:-8000}:8000'
+      - '127.0.0.1:${SERVING_PORT:-8077}:8077'
     healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8077/health', timeout=5)"]
       interval: 15s
       timeout: 10s
       start_period: 60s

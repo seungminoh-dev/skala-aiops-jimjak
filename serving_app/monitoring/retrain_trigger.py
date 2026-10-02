@@ -16,7 +16,7 @@
 
 불합격 시 (기획서 ③ 재학습 "불합격 시")
     새 모델이 배포 기준은 못 넘었지만 같은 검증 데이터에서 현재 모델보다 나으면
-    [ALERT] 수동 승인 필요 를 남긴다 — 기존 모델은 그대로, 운영자가 MLflow에서 그 run 을 확인해 올린다.
+    [ALERT] 수동 승인 필요 를 남긴다 — 기존 모델은 그대로, 운영자가 대시보드 모델 화면(POST /models/approve)에서 승인해 올린다.
     불합격한 데이터 파일은 기억해 두고, 같은 파일로는 다시 재학습하지 않는다(새 업로드가 오면 다시 시도).
 
 반환 dict 는 drift_check 로 그대로 응답에 실린다. predict.py 는 "promoted" 가 참이면 모델을 다시 불러온다.
@@ -118,7 +118,7 @@ def _retrain() -> dict:
     if needs_approval:
         logger.warning(
             "[ALERT] 수동 승인 필요: 새 모델 MAE %.1f분 < 현재 모델 %.1f분이지만 배포 기준 미달 - 기존 모델 유지, "
-            "운영자가 MLflow run %s 확인 후 승격",
+            "운영자가 대시보드 모델 화면에서 승인하면 승격 (run %s)",
             mae, current_mae, result.get("run_id") or "-",
         )
     return {
@@ -143,13 +143,45 @@ def _retrain() -> dict:
     }
 
 
+def _serving_version() -> str | None:
+    """판정 당시 서빙 중인 모델 버전 — batch-test 가 모델을 불러온 뒤 부르므로 보통 있다"""
+    from serving_app import model_loader
+
+    model = model_loader._model_cache
+    return model.version if model is not None else None
+
+
+def _outcome_summary(outcome: dict) -> dict:
+    """판정 기록에 남길 재학습 결과 — 대시보드가 새로고침 뒤에도 승격·불합격·승인 대기·보류를 다시 그린다"""
+    r = outcome.get("retrain", {})
+    return {
+        "promoted": outcome["promoted"],
+        "version": outcome["version"],
+        "status": r.get("status"),
+        "held": r.get("error") == "awaiting_new_data",
+        "needs_approval": r.get("needs_approval", False),
+        "passed": r.get("passed"),
+        "mae": r.get("mae"),
+        "baseline_mae": r.get("baseline_mae"),
+        "current_mae": r.get("current_mae"),
+        "failed_reasons": r.get("failed_reasons", []),
+        "error": r.get("error"),
+        "run_id": r.get("run_id"),
+    }
+
+
 def check_and_trigger(recent_predictions: list[dict]) -> dict:
     verdict = dd.judge(recent_predictions)
     _log_verdict(verdict)
+    version = _serving_version()
+    if version and verdict["status"] != dd.PENDING:
+        verdict = {**verdict, "model_version": version}
+        dd.STATE.annotate_last(model_version=version)
 
     if verdict["status"] != dd.RETRAIN:
         return {**verdict, "promoted": False}
 
     outcome = _retrain()
     dd.STATE.reset()  # 통과·불합격 모두 판정 기록을 새로 시작한다
+    dd.STATE.annotate_last(outcome=_outcome_summary(outcome))
     return {**verdict, **outcome}

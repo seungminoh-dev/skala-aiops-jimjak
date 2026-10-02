@@ -11,7 +11,7 @@ import { Card, PageHeader, StatCard } from '@/components/common/Card'
 import { Pager } from '@/components/common/Pager'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
-import { fmtClock } from '@/lib/format'
+import { carouselName, fmtClock } from '@/lib/format'
 
 /**
  * 모니터링 (엔지니어, 원어) — Vercel Observability 를 따른다. 질문: "모델이 알아채나"
@@ -36,7 +36,7 @@ export function MonitorPage() {
         title="모니터링"
         sub={
           <>
-            {LIVE_CAROUSEL} 예측 모델 <span className="type-mono-13 text-gray-1000">{m.modelVersion}</span> · {m.windowSize}편이 모일 때마다
+            {carouselName(LIVE_CAROUSEL)} 수취대 예측 모델 <span className="type-mono-13 text-gray-1000">{m.modelVersion}</span> · {m.windowSize}편이 모일 때마다
             드리프트를 점검합니다{last && <> · 마지막 점검 <span className="type-mono-13 text-gray-1000">{fmtClock(last.at)}</span></>}
           </>
         }
@@ -76,7 +76,7 @@ export function MonitorPage() {
           tone={overNow ? 'red' : 'blue'}
           sub={
             <>
-              임계값 <span className="text-red-900">{m.threshold}분</span> (정상 구간 p95, 최소 6.0)
+              임계값 <span className="text-red-900">{m.threshold}분</span> (정상 구간 p95와 배포 기준 {m.gateMae}분 중 큰 값)
             </>
           }
           chart={<Sparkline values={maes} tone={overNow ? 'red' : 'blue'} threshold={m.threshold} height={36} />}

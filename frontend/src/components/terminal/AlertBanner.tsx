@@ -4,6 +4,7 @@ import { ArrowRightIcon, WarningIcon } from '@phosphor-icons/react'
 
 import type { TerminalAlert } from '@/api'
 import { PAGE_PATH } from '@/app/routes'
+import { carouselName } from '@/lib/format'
 import { EASE_OUT, FADE, SPRING } from '@/lib/motion'
 
 /**
@@ -53,7 +54,7 @@ export function AlertBanner({ alerts }: { alerts: TerminalAlert[] }) {
                     transition={SPRING}
                     className="flex shrink-0 items-center gap-1.5 type-label-13 text-red-900"
                   >
-                    <span className="type-mono-13 font-medium">{a.carouselId}</span>
+                    <span className="font-semibold">{carouselName(a.carouselId)}</span>
                     <span>{a.short}</span>
                   </motion.span>
                 ))}

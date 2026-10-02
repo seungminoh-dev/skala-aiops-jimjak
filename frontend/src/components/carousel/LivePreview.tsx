@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react'
 
 import type { CarouselFlight } from '@/api'
+import { LIVE_CAROUSEL } from '@/app/routes'
 import { useReducedMotion } from '@/components/graphics/useReducedMotion'
 import { MascotCarry, MascotPose } from '@/components/mascot/Mascot'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { pointOnStadium, stadium, stadiumPath } from '@/components/terminal/geometry'
+import { carouselName } from '@/lib/format'
 
 /**
  * 수취대 실시간 그림 — Vercel 프로젝트 Overview 의 미리보기 자리.
@@ -64,7 +66,7 @@ export function LivePreview({ processing, label }: { processing: CarouselFlight 
         <CarouselIcon tier={busy ? 'unloading' : 'operating'} size={14} />
         {label}
       </span>
-      <span className="absolute right-3 bottom-2 type-mono-12 text-gray-900">T1-03</span>
+      <span className="absolute right-3 bottom-2 type-label-12 text-gray-900">{carouselName(LIVE_CAROUSEL)}</span>
       <span className="absolute bottom-1 left-3">{busy ? <MascotCarry size="sm" /> : <MascotPose alert={false} size="sm" />}</span>
     </div>
   )
