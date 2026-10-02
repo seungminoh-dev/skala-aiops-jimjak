@@ -24,6 +24,7 @@ serving_app/routers/predict.py 의 recent_predictions 가 21건만 남기더라�
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import math
 import os
@@ -76,14 +77,26 @@ class DriftState:
 
     consecutive: int = 0
     history: list[dict] = field(default_factory=list)
+    judged: int = 0  # 지금까지 내린 판정 수 — 판정 순번(no)
 
     def record(self, verdict: dict) -> None:
-        self.history.append(verdict)
+        self.history.append(dict(verdict))  # 응답으로 나가는 dict 와 따로 둔다 (annotate_last 는 기록에만)
         del self.history[:-HISTORY_SIZE]
+
+    def annotate_last(self, **fields) -> None:
+        """마지막 판정 기록에 덧붙인다 — 운영 버전·재학습 결과 (상태 API 로 화면을 다시 그릴 때 쓴다)"""
+        if self.history:
+            self.history[-1].update(fields)
 
     def reset(self) -> None:
         """재학습(성공·실패 모두) 뒤 — 판정 기록을 새로 시작한다(기획서 ③ 재학습 후)."""
         self.consecutive = 0
+
+    def clear(self) -> None:
+        """데모 초기화 — 연속 횟수·판정 기록·순번을 모두 비운다"""
+        self.consecutive = 0
+        self.history.clear()
+        self.judged = 0
 
 
 STATE = DriftState()
@@ -95,7 +108,8 @@ def judge(recent_predictions: list[dict], state: DriftState = STATE, threshold: 
 
     recent_predictions: [{"predicted": float, "actual": float, "event_tag": str}, ...] (오래된 것 → 최근)
     반환: {"status", "mae", "rmse", "threshold", "threshold_source", "consecutive", "limit",
-           "window_size", "event_tags", "event_count", "mae_without_events"}
+           "window_size", "event_tags", "event_count", "mae_without_events",
+           "no", "at", "points"}  — no 판정 순번, at 판정 시각, points 판정한 21편(예측·실제·사건 표시)
     """
     if threshold is None:
         threshold, source = load_threshold()
@@ -123,8 +137,11 @@ def judge(recent_predictions: list[dict], state: DriftState = STATE, threshold: 
         state.consecutive += 1
         status = RETRAIN if state.consecutive >= CONSECUTIVE_LIMIT else WARN
 
+    state.judged += 1
     verdict = {
         **base,
+        "no": state.judged,
+        "at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "status": status,
         "mae": round(mae, 2),
         "rmse": round(compute_rmse(window), 2),
@@ -133,6 +150,11 @@ def judge(recent_predictions: list[dict], state: DriftState = STATE, threshold: 
         "event_count": len(events),
         # 사건 편을 뺀 MAE — 사건 편만 있는 창이면 잴 수 없으므로 None
         "mae_without_events": round(compute_mae(plain), 2) if events and plain else None,
+        # 판정한 21편 — 대시보드 감시 창 차트 (새로고침해도 다시 그릴 수 있게 기록에도 남긴다)
+        "points": [
+            {"predicted": round(float(p["predicted"]), 1), "actual": float(p["actual"]), "event_tag": p.get("event_tag") or ""}
+            for p in window
+        ],
     }
     state.record(verdict)
     return verdict

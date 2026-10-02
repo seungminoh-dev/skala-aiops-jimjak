@@ -143,13 +143,45 @@ def _retrain() -> dict:
     }
 
 
+def _serving_version() -> str | None:
+    """판정 당시 서빙 중인 모델 버전 — batch-test 가 모델을 불러온 뒤 부르므로 보통 있다"""
+    from serving_app import model_loader
+
+    model = model_loader._model_cache
+    return model.version if model is not None else None
+
+
+def _outcome_summary(outcome: dict) -> dict:
+    """판정 기록에 남길 재학습 결과 — 대시보드가 새로고침 뒤에도 승격·불합격·승인 대기·보류를 다시 그린다"""
+    r = outcome.get("retrain", {})
+    return {
+        "promoted": outcome["promoted"],
+        "version": outcome["version"],
+        "status": r.get("status"),
+        "held": r.get("error") == "awaiting_new_data",
+        "needs_approval": r.get("needs_approval", False),
+        "passed": r.get("passed"),
+        "mae": r.get("mae"),
+        "baseline_mae": r.get("baseline_mae"),
+        "current_mae": r.get("current_mae"),
+        "failed_reasons": r.get("failed_reasons", []),
+        "error": r.get("error"),
+        "run_id": r.get("run_id"),
+    }
+
+
 def check_and_trigger(recent_predictions: list[dict]) -> dict:
     verdict = dd.judge(recent_predictions)
     _log_verdict(verdict)
+    version = _serving_version()
+    if version and verdict["status"] != dd.PENDING:
+        verdict = {**verdict, "model_version": version}
+        dd.STATE.annotate_last(model_version=version)
 
     if verdict["status"] != dd.RETRAIN:
         return {**verdict, "promoted": False}
 
     outcome = _retrain()
     dd.STATE.reset()  # 통과·불합격 모두 판정 기록을 새로 시작한다
+    dd.STATE.annotate_last(outcome=_outcome_summary(outcome))
     return {**verdict, **outcome}

@@ -91,6 +91,27 @@ class JudgeTest(unittest.TestCase):
             self.judge(window(1))
         self.assertEqual(len(self.state.history), dd.HISTORY_SIZE)
 
+    def test_verdict_carries_number_time_and_judged_points(self):
+        first = self.judge(window(2, events=1))
+        second = self.judge(window(2))
+        self.assertEqual((first["no"], second["no"]), (1, 2))
+        self.assertIn("T", first["at"])
+        self.assertEqual(len(first["points"]), dd.WINDOW_SIZE)
+        self.assertEqual(first["points"][0], {"predicted": 30.0, "actual": 32.0, "event_tag": "bhs_failure"})
+        self.assertEqual(first["points"][1]["event_tag"], "")
+
+    def test_annotate_last_changes_only_the_record(self):
+        v = self.judge(window(8))
+        self.state.annotate_last(model_version="v1")
+        self.assertNotIn("model_version", v)
+        self.assertEqual(self.state.history[-1]["model_version"], "v1")
+
+    def test_clear_empties_everything(self):
+        self.judge(window(8))
+        self.state.clear()
+        self.assertEqual((self.state.consecutive, self.state.history, self.state.judged), (0, [], 0))
+        self.assertEqual(self.judge(window(1))["no"], 1)
+
 
 class ThresholdTest(unittest.TestCase):
     def write(self, payload) -> str:
