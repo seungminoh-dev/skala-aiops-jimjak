@@ -55,6 +55,7 @@ class CheckAndTriggerTest(unittest.TestCase):
     def setUp(self):
         dd.STATE.consecutive = 0
         dd.STATE.history.clear()
+        rt._rejected_file = None
         patcher = patch.object(dd, "load_threshold", return_value=(5.0, "given"))
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -87,6 +88,44 @@ class CheckAndTriggerTest(unittest.TestCase):
         self.assertFalse(result["promoted"])
         self.assertEqual(result["retrain"]["failed_reasons"], ["MAE가 5분을 초과했습니다."])
         self.assertEqual(dd.STATE.consecutive, 0)
+
+    def retrain_twice(self, fine_tune_result, file="x.csv"):
+        """판정 2회 = 재학습 1번. 재학습 결과를 돌려준다"""
+        rt.check_and_trigger(window(8))
+        info = {"file": file, "rows": 200, "events_excluded": 0}
+        with patch.object(rt, "retrain_rows", return_value=(self.rows(), info)), \
+             patch.object(rt, "_fine_tune", return_value=fine_tune_result) as ft:
+            return rt.check_and_trigger(window(8)), ft
+
+    def test_rejected_but_better_than_current_asks_for_approval(self):
+        better = {"status": "rejected", "promoted": False, "passed": False, "mae": 5.5, "current_mae": 6.5,
+                  "run_id": "abc123", "failed_reasons": ["MAE가 5분을 초과했습니다."]}
+        with self.assertLogs("aiops", "WARNING") as logs:
+            result, _ = self.retrain_twice(better)
+        self.assertFalse(result["promoted"])
+        self.assertTrue(result["retrain"]["needs_approval"])
+        self.assertTrue(any("[ALERT] 수동 승인 필요" in line and "abc123" in line for line in logs.output))
+
+    def test_rejected_and_worse_than_current_does_not_ask(self):
+        worse = {"status": "rejected", "promoted": False, "passed": False, "mae": 6.0, "current_mae": 4.0}
+        result, _ = self.retrain_twice(worse)
+        self.assertFalse(result["retrain"]["needs_approval"])
+
+    def test_same_data_is_not_retrained_again_until_new_upload(self):
+        rejected = {"status": "rejected", "promoted": False, "passed": False, "mae": 5.5, "current_mae": 6.5}
+        self.retrain_twice(rejected, file="a.csv")
+        result, ft = self.retrain_twice(rejected, file="a.csv")
+        ft.assert_not_called()
+        self.assertEqual(result["retrain"]["error"], "awaiting_new_data")
+        self.assertEqual(dd.STATE.consecutive, 0)
+        _, ft = self.retrain_twice(rejected, file="b.csv")
+        ft.assert_called_once()
+
+    def test_deferred_is_not_remembered_as_rejected(self):
+        deferred = {"status": "deferred", "promoted": False, "passed": False, "mae": None}
+        self.retrain_twice(deferred, file="a.csv")
+        _, ft = self.retrain_twice(deferred, file="a.csv")
+        ft.assert_called_once()
 
     def test_not_enough_rows_skips_fine_tune(self):
         rt.check_and_trigger(window(8))
