@@ -3,6 +3,7 @@ import { ArrowRightIcon, CheckCircleIcon, HandPalmIcon, WarningIcon } from '@pho
 
 import { TIER_LABEL, useControlRoom, useTerminal, type AutoAction, type CarouselTier } from '@/api'
 import { LIVE_CAROUSEL, PAGE_PATH } from '@/app/routes'
+import { AnimatedNumber } from '@/components/common/AnimatedNumber'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { LiveCallout } from '@/components/terminal/LiveCallout'
 import { TerminalMap2D } from '@/components/terminal/TerminalMap2D'
@@ -110,7 +111,7 @@ function FigureRow({
         <span className="truncate type-label-13 text-gray-900">{sub}</span>
       </div>
       <span className="flex shrink-0 items-baseline gap-1">
-        <span className={cn('type-heading-32 num', tone === 'red' ? 'text-red-900' : 'text-gray-1000')}>{value}</span>
+        <AnimatedNumber value={value} className={cn('type-heading-32 num', tone === 'red' ? 'text-red-900' : 'text-gray-1000')} />
         {unit && <span className="type-label-14 text-gray-900">{unit}</span>}
       </span>
     </div>

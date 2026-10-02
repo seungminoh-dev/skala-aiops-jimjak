@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/cn'
 
+import { AnimatedNumber } from './AnimatedNumber'
+
 /** 페이지 머리 — 제목(heading-24) + 한 줄 설명 + 오른쪽 동작 */
 export function PageHeader({ title, sub, icon, actions }: { title: ReactNode; sub?: ReactNode; icon?: ReactNode; actions?: ReactNode }) {
   return (
@@ -78,7 +80,7 @@ export function StatCard({
         {label}
       </span>
       <span className={cn('flex items-baseline gap-1', color)}>
-        <span className="type-heading-32 num">{value}</span>
+        {typeof value === 'string' || typeof value === 'number' ? <AnimatedNumber value={value} className="type-heading-32 num" /> : <span className="type-heading-32 num">{value}</span>}
         {unit && <span className="type-label-14 font-medium">{unit}</span>}
       </span>
       {sub && <span className="type-label-13 text-gray-900">{sub}</span>}

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { motion } from 'motion/react'
 import { Outlet, useLocation } from 'react-router-dom'
 
 import { useTerminal } from '@/api'
@@ -6,6 +7,7 @@ import { pageOf } from '@/app/routes'
 import { Header } from '@/components/shell/Header'
 import { Sidebar } from '@/components/shell/Sidebar'
 import { AlertBanner } from '@/components/terminal/AlertBanner'
+import { EASE_OUT } from '@/lib/motion'
 
 /**
  * 앱 틀 — DESIGN.md "4. 배치". 왼쪽 사이드바 255px + 헤더 56px + 본문(좌우 24, 최대 1400).
@@ -24,7 +26,15 @@ export function AppShell() {
         <Header page={page} />
         <AlertBanner alerts={terminal.alerts} />
         <main className="mx-auto w-full max-w-[1448px] flex-1 px-6 pt-4 pb-12 text-gray-1000">
-          <Outlet />
+          {/* 화면을 옮기면 새 화면이 살짝 떠오르며 나타난다 */}
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: EASE_OUT }}
+          >
+            <Outlet />
+          </motion.div>
         </main>
       </div>
     </div>

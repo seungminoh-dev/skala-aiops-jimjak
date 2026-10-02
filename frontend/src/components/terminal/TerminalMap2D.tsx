@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { WarningIcon, XIcon } from '@phosphor-icons/react'
 
 import { closeAlert, TIER_LABEL, type CarouselTier, type TerminalAlert, type TerminalView } from '@/api'
 import { useReducedMotion } from '@/components/graphics/useReducedMotion'
 import { cn } from '@/lib/cn'
+import { SPRING } from '@/lib/motion'
 
 import { pointOnStadium, stadium, stadiumPath, TERMINAL_NAME, type TerminalId } from './geometry'
 
@@ -130,11 +132,17 @@ export function TerminalMap2D({ zones, alerts, onEnter, callout }: TerminalMap2D
       </div>
 
       {/* 확인 필요 말풍선 — 뒷벽 바로 위, 꼬리가 수취대를 가리킨다. X 로 닫는다(확인) */}
+      <AnimatePresence>
       {pins.map(({ alert, leftPct, top }) => (
-        <div
+        <motion.div
           key={alert.id}
-          className="absolute z-10 flex -translate-x-1/2 -translate-y-full flex-col items-center"
-          style={{ left: `${leftPct}%`, top: top - 2 }}
+          // 닫으면 꼬리 쪽으로 오므라들며 사라지고, 새로 뜨면 꼬리에서 튀어나온다
+          initial={{ opacity: 0, scale: 0.6, x: '-50%', y: '-100%' }}
+          animate={{ opacity: 1, scale: 1, x: '-50%', y: '-100%' }}
+          exit={{ opacity: 0, scale: 0.6, x: '-50%', y: '-100%' }}
+          transition={SPRING}
+          className="absolute z-10 flex flex-col items-center"
+          style={{ left: `${leftPct}%`, top: top - 2, transformOrigin: '50% 100%' }}
           title={`${alert.title}\n${alert.detail}`}
         >
           <span className="flex h-7 items-center gap-1.5 rounded-md bg-red-700 pr-1 pl-2 whitespace-nowrap text-white shadow-menu">
@@ -151,8 +159,9 @@ export function TerminalMap2D({ zones, alerts, onEnter, callout }: TerminalMap2D
             </button>
           </span>
           <span aria-hidden className="-mt-1 size-2 rotate-45 bg-red-700" />
-        </div>
+        </motion.div>
       ))}
+      </AnimatePresence>
     </div>
   )
 }
@@ -183,13 +192,13 @@ function Ring({ tier, emphasis, reduced }: { tier: CarouselTier; emphasis: boole
         d={`${OUTER_PATH} ${INNER_PATH}`}
         fillRule="evenodd"
         className={cn(
-          'transition-colors',
+          'transition-colors duration-500',
           tier === 'alert' ? 'fill-red-100' : tier === 'idle' ? 'fill-gray-100' : 'fill-background-100',
           emphasis && tier !== 'alert' && 'group-hover:fill-gray-200',
         )}
       />
-      <path d={INNER_PATH} className={cn('fill-background-200', stroke)} strokeWidth={strokeWidth} />
-      <path d={OUTER_PATH} className={cn('fill-none', stroke)} strokeWidth={strokeWidth} />
+      <path d={INNER_PATH} className={cn('fill-background-200 transition-colors duration-500', stroke)} strokeWidth={strokeWidth} />
+      <path d={OUTER_PATH} className={cn('fill-none transition-colors duration-500', stroke)} strokeWidth={strokeWidth} />
       {busy &&
         Array.from({ length: bags }, (_, i) => {
           const phase = i / bags

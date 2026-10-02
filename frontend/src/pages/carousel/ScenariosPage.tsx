@@ -1,4 +1,5 @@
-import { useRef, useState, type ComponentType } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowsClockwiseIcon,
   ChartLineIcon,
@@ -36,6 +37,7 @@ import { MascotCarry, MascotPose } from '@/components/mascot/Mascot'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
 import { fmtClock } from '@/lib/format'
+import { EASE_OUT, FADE } from '@/lib/motion'
 
 /**
  * 시나리오 (운영, 쉬운 말) — 질문: "규칙으로는 못 버티는 사건이 생기면?"
@@ -81,6 +83,7 @@ export function ScenariosPage() {
   const scenario = sc.scenarios.find((s) => s.id === selected) ?? sc.scenarios[0]
   const running = sc.runningId !== null
   const run = sc.currentRun && sc.currentRun.scenarioId === scenario.id ? sc.currentRun : null
+  const [revealed, setRevealed] = useState(false)
 
   const start = async () => {
     try {
@@ -138,9 +141,9 @@ export function ScenariosPage() {
             </div>
           </div>
 
-          <Steps run={run} />
+          <Steps run={run} onRevealed={setRevealed} />
 
-          <Outcome run={run} running={sc.runningId === scenario.id} />
+          <Outcome run={run} running={sc.runningId === scenario.id || (run?.outcome != null && !revealed)} revealed={revealed} />
         </Card>
       </div>
 
@@ -216,13 +219,43 @@ function DataFacts({ id }: { id: ScenarioId }) {
 
 /* ───────────────────────── 여섯 단계 ───────────────────────── */
 
-function Steps({ run }: { run: PipelineRun | null }) {
+/**
+ * 여섯 단계 — 결과가 오면 왼쪽부터 한 단계씩 불이 들어온다(단계 사이 선이 차오르고, 동그라미가 톡 커진다).
+ * 끝까지 켜지면 onRevealed 로 결과 상자를 보이게 한다.
+ */
+function Steps({ run, onRevealed }: { run: PipelineRun | null; onRevealed: (done: boolean) => void }) {
   const steps: PipelineStep[] =
     run?.steps ??
     STEP_ORDER.map((key) => ({ key, name: STEP[key].label, state: 'waiting', result: null, systemAction: key === 'retrain' || key === 'deploy' }))
+  const finished = Boolean(run?.outcome)
+  const [revealed, setRevealed] = useState(finished ? 0 : steps.length)
+
+  useEffect(() => {
+    if (!finished) {
+      setRevealed(steps.length)
+      onRevealed(false)
+      return
+    }
+    setRevealed(0)
+    onRevealed(false)
+    let n = 0
+    const id = window.setInterval(() => {
+      n += 1
+      setRevealed(n)
+      if (n >= steps.length) {
+        window.clearInterval(id)
+        onRevealed(true)
+      }
+    }, 260)
+    return () => window.clearInterval(id)
+    // 새 결과(run.id)가 올 때마다 다시 켠다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run?.id, finished])
+
   return (
     <ol className="grid grid-cols-6 gap-2" aria-label="AI 대응 단계">
-      {steps.map((s, i) => {
+      {steps.map((step, i) => {
+        const s: PipelineStep = i < revealed ? step : { ...step, state: 'waiting', result: null }
         const meta = STEP[s.key]
         const tone =
           s.state === 'done'
@@ -236,19 +269,24 @@ function Steps({ run }: { run: PipelineRun | null }) {
                 : 'border-gray-alpha-400 bg-background-100 text-gray-700'
         return (
           <li key={s.key} className="relative flex flex-col gap-2">
-            {/* 다음 단계로 이어지는 선 */}
+            {/* 다음 단계로 이어지는 선 — 이 단계가 끝나면 왼쪽부터 차오른다 */}
             {i < steps.length - 1 && (
-              <span
-                aria-hidden
-                className={cn(
-                  'absolute top-5 left-[calc(50%+22px)] h-px w-[calc(100%-44px+8px)] transition-colors duration-500',
-                  s.state === 'done' ? 'bg-gray-1000' : 'bg-gray-alpha-400',
-                )}
-              />
+              <span aria-hidden className="absolute top-5 left-[calc(50%+22px)] h-px w-[calc(100%-44px+8px)] bg-gray-alpha-400">
+                <motion.span
+                  className="absolute inset-0 origin-left bg-gray-1000"
+                  initial={false}
+                  animate={{ scaleX: s.state === 'done' ? 1 : 0 }}
+                  transition={{ duration: 0.26, ease: EASE_OUT }}
+                />
+              </span>
             )}
-            <span
+            <motion.span
+              key={s.state}
+              initial={{ scale: 0.82 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 600, damping: 18 }}
               className={cn(
-                'relative mx-auto flex size-10 items-center justify-center rounded-full border transition-colors duration-300',
+                'relative mx-auto flex size-10 items-center justify-center rounded-full border transition-colors duration-200',
                 tone,
                 s.state === 'skipped' && 'border-dashed',
               )}
@@ -262,13 +300,22 @@ function Steps({ run }: { run: PipelineRun | null }) {
               ) : (
                 <meta.Icon size={18} />
               )}
-            </span>
-            <span className={cn('text-center type-label-13', s.state === 'waiting' || s.state === 'skipped' ? 'text-gray-700' : 'font-medium text-gray-1000')}>
+            </motion.span>
+            <span className={cn('text-center type-label-13 transition-colors', s.state === 'waiting' || s.state === 'skipped' ? 'text-gray-700' : 'font-medium text-gray-1000')}>
               {meta.label}
             </span>
-            <span className="min-h-4 text-center type-mono-12 text-gray-900">
-              {s.state === 'skipped' ? '건너뜀' : (s.result ?? '')}
-            </span>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={`${s.state}-${s.result ?? ''}`}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={FADE}
+                className="min-h-4 text-center type-mono-12 text-gray-900"
+              >
+                {s.state === 'skipped' ? '건너뜀' : (s.result ?? '')}
+              </motion.span>
+            </AnimatePresence>
           </li>
         )
       })}
@@ -276,7 +323,7 @@ function Steps({ run }: { run: PipelineRun | null }) {
   )
 }
 
-function Outcome({ run, running }: { run: PipelineRun | null; running: boolean }) {
+function Outcome({ run, running, revealed }: { run: PipelineRun | null; running: boolean; revealed: boolean }) {
   if (running)
     return (
       <div className="flex items-center gap-3 rounded-md bg-blue-100 px-4 py-3">
@@ -284,7 +331,7 @@ function Outcome({ run, running }: { run: PipelineRun | null; running: boolean }
         <span className="type-label-14 font-medium text-blue-900">AI가 상황을 판단하고 있어요</span>
       </div>
     )
-  if (!run || !run.outcome)
+  if (!run || !run.outcome || !revealed)
     return (
       <div className="flex items-center gap-3 rounded-md bg-gray-100 px-4 py-3">
         <MascotPose alert={false} size="sm" />
@@ -292,7 +339,12 @@ function Outcome({ run, running }: { run: PipelineRun | null; running: boolean }
       </div>
     )
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-gray-alpha-400 px-4 py-3">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: EASE_OUT }}
+      className="flex flex-col gap-3 rounded-md border border-gray-alpha-400 px-4 py-3"
+    >
       <div className="flex items-center gap-3">
         <span className="type-label-13 text-gray-900">결과</span>
         <VerdictLabel v={run.outcome} engineer={false} className="type-label-14" />
@@ -312,7 +364,7 @@ function Outcome({ run, running }: { run: PipelineRun | null; running: boolean }
           ))}
         </ul>
       )}
-    </div>
+    </motion.div>
   )
 }
 

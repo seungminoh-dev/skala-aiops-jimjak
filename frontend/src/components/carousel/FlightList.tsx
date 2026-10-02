@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircleIcon, ClockIcon, SparkleIcon, WarningIcon } from '@phosphor-icons/react'
 
 import type { CarouselFlight, CarouselFlightStatus } from '@/api'
+import { FilterChips } from '@/components/common/FilterChips'
 import { Pager } from '@/components/common/Pager'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { cn } from '@/lib/cn'
@@ -37,25 +38,15 @@ export function FlightList({ flights, nextId }: { flights: CarouselFlight[]; nex
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => {
-          const count = f.id === 'all' ? flights.length : flights.filter((x) => x.status === f.id).length
-          return (
-            <button
-              key={f.id}
-              type="button"
-              aria-pressed={filter === f.id}
-              onClick={() => setFilter(f.id)}
-              className={cn(
-                'flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 type-label-13 transition-colors',
-                filter === f.id ? 'bg-gray-1000 text-white' : 'bg-background-100 text-gray-900 shadow-border hover:text-gray-1000',
-              )}
-            >
-              {f.label} <span className="num opacity-80">{count}</span>
-            </button>
-          )
-        })}
-      </div>
+      <FilterChips
+        value={filter}
+        onChange={setFilter}
+        items={FILTERS.map((f) => ({
+          id: f.id,
+          label: f.label,
+          count: f.id === 'all' ? flights.length : flights.filter((x) => x.status === f.id).length,
+        }))}
+      />
 
       <ul key={`${filter}-${page}`} className="material-base divide-y divide-gray-alpha-400">
         {shown.map((f, i) => (

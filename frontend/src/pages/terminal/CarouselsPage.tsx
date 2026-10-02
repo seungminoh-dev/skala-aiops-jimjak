@@ -4,6 +4,7 @@ import { AirplaneLandingIcon, ArrowRightIcon, ClockIcon, SparkleIcon } from '@ph
 
 import { TIER_LABEL, useDemoClock, useTerminal, type CarouselTier, type TerminalCarousel } from '@/api'
 import { PAGE_PATH } from '@/app/routes'
+import { FilterChips } from '@/components/common/FilterChips'
 import { Avatars } from '@/components/shell/Avatars'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { TERMINAL_NAME, type TerminalId } from '@/components/terminal/geometry'
@@ -36,27 +37,16 @@ export function CarouselsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="type-heading-24 text-gray-1000">수취대</h1>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => {
-          const count = f === 'all' ? terminal.carousels.length : terminal.counts[f]
-          return (
-            <button
-              key={f}
-              type="button"
-              aria-pressed={filter === f}
-              onClick={() => setFilter(f)}
-              className={cn(
-                'flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 type-label-13 transition-colors',
-                filter === f ? 'bg-gray-1000 text-white' : 'bg-background-100 text-gray-900 shadow-border hover:text-gray-1000',
-              )}
-            >
-              {f !== 'all' && <CarouselIcon tier={f} size={14} className={filter === f && f !== 'alert' ? 'invert' : undefined} />}
-              {f === 'all' ? '전체' : TIER_LABEL[f]}
-              <span className="num opacity-80">{count}</span>
-            </button>
-          )
-        })}
-      </div>
+      <FilterChips
+        value={filter}
+        onChange={setFilter}
+        items={FILTERS.map((f) => ({
+          id: f,
+          label: f === 'all' ? '전체' : TIER_LABEL[f],
+          count: f === 'all' ? terminal.carousels.length : terminal.counts[f],
+          icon: f === 'all' ? undefined : (active: boolean) => <CarouselIcon tier={f} size={14} className={active && f !== 'alert' ? 'invert' : undefined} />,
+        }))}
+      />
 
       <ul className="material-base divide-y divide-gray-alpha-400">
         {rows.map((c) => (

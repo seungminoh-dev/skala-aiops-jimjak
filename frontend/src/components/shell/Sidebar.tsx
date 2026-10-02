@@ -1,4 +1,5 @@
 import { useState, type ComponentType, type ReactNode } from 'react'
+import { motion } from 'motion/react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   AirplaneTiltIcon,
@@ -17,6 +18,7 @@ import { LIVE_CAROUSEL, PAGE_LABEL, PAGE_PATH, scopeOf, TENANT, type PageKey } f
 import { MascotMark } from '@/components/mascot/Mascot'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { cn } from '@/lib/cn'
+import { SPRING } from '@/lib/motion'
 
 import { Avatars } from './Avatars'
 
@@ -88,6 +90,7 @@ export function Sidebar({
                 key={c.id}
                 to={c.live ? PAGE_PATH.overview : `${PAGE_PATH.carousels}?focus=${c.id}`}
                 active={c.live ? undefined : page === 'carousels' && focus === c.id}
+                layoutGroup="nav-fav"
                 label={c.id}
                 mono
                 title={`${c.id} 수취대 ${TIER_LABEL[c.tier]}`}
@@ -173,9 +176,12 @@ function NavItem({
   title,
   trailing,
   active,
+  layoutGroup = 'nav-main',
 }: {
   /** 경로만으로 고를 수 없을 때(즐겨찾기 ?focus=) 직접 정한다 */
   active?: boolean
+  /** 활성 바탕이 함께 미끄러지는 묶음 (메뉴 / 즐겨찾기) */
+  layoutGroup?: string
   to: string
   label: string
   icon: ReactNode
@@ -191,14 +197,22 @@ function NavItem({
       title={title}
       className={({ isActive }) =>
         cn(
-          'flex h-9 items-center gap-2.5 rounded-md px-3 transition-colors',
-          (active ?? isActive) ? 'bg-gray-200 text-gray-1000' : 'text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000',
+          'relative flex h-9 items-center gap-2.5 rounded-md px-3 transition-colors',
+          (active ?? isActive) ? 'text-gray-1000' : 'text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000',
         )
       }
     >
-      {icon}
-      <span className={cn('flex-1 truncate font-medium', mono ? 'type-mono-14' : 'type-label-14')}>{label}</span>
-      {trailing}
+      {({ isActive }) => (
+        <>
+          {/* 활성 표시 — 메뉴를 옮기면 바탕이 미끄러져 따라간다 */}
+          {(active ?? isActive) && (
+            <motion.span layoutId={layoutGroup} transition={SPRING} className="absolute inset-0 rounded-md bg-gray-200" aria-hidden />
+          )}
+          <span className="relative flex shrink-0">{icon}</span>
+          <span className={cn('relative flex-1 truncate font-medium', mono ? 'type-mono-14' : 'type-label-14')}>{label}</span>
+          {trailing && <span className="relative flex">{trailing}</span>}
+        </>
+      )}
     </NavLink>
   )
 }

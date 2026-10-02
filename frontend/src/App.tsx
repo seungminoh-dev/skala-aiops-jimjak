@@ -1,3 +1,4 @@
+import { MotionConfig } from 'motion/react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from '@/app/AppShell'
@@ -20,6 +21,7 @@ import { LogsPage } from '@/pages/terminal/LogsPage'
  */
 export default function App() {
   return (
+    <MotionConfig reducedMotion="user">
     <TooltipProvider delayDuration={300}>
       <HashRouter>
         <Routes>
@@ -40,5 +42,6 @@ export default function App() {
       </HashRouter>
       <Toaster />
     </TooltipProvider>
+    </MotionConfig>
   )
 }
