@@ -9,6 +9,7 @@
  *   /logs/events                 aiops.log
  *   /data/status                 최근 업로드
  *   /scenarios                   시나리오 데이터 파일 요약
+ *   /scenarios/normal/file       T1-03 편 기록 (api/lineData.ts)
  * 화면이 들고 있는 것: 데모 시계, 시나리오 실행 횟수·커서·실행 기록, 시나리오로 보낸 편 이름(판정 점 이름 붙이기)
  *
  * 시나리오 실행 = scripts/simulate_drift.py 와 같은 흐름
@@ -20,6 +21,7 @@
  */
 import { parseDatasetCsv, summarizeRows } from '@/api/csv'
 import { API_BASE, request, requestText } from '@/api/http'
+import { getLineRows, loadLineRows } from '@/api/lineData'
 import { DEMO_BASE } from '@/api/ops'
 import { DATA_SOURCE_SIM, SCENARIO_SPECS, toScenarioId } from '@/api/scenarioData'
 import {
@@ -602,6 +604,7 @@ async function poll() {
     if (Date.now() - modelsReadAt > MODELS_EVERY_SEC * 1000) jobs.push(refreshModels())
     // 시작할 때 서버가 없었으면 다시 붙을 때 읽는다
     if (Object.keys(state.scenarioFiles).length === 0) jobs.push(refreshScenarioFiles())
+    if (getLineRows().length === 0) jobs.push(loadLineRows())
     await Promise.allSettled(jobs)
   } finally {
     polling = false
@@ -610,7 +613,7 @@ async function poll() {
 
 /** 화면을 그리기 전에 한 번 다 읽는다 (main.tsx) */
 export async function start(): Promise<void> {
-  await refreshAll()
+  await Promise.allSettled([refreshAll(), loadLineRows()])
 }
 
 /* ───────────────────────── 시나리오 실행 ───────────────────────── */

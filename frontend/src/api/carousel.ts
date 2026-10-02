@@ -1,13 +1,13 @@
 /**
- * T1-03 수취대 (실제로 모델이 도는 곳) — 팀 데이터셋(api/data/t103.ts) 기준.
+ * T1-03 수취대 (실제로 모델이 도는 곳) — 서버의 팀 데이터셋 data/normal_2w.csv 를 데모 날로 옮긴 편 기록(api/lineData.ts) 기준.
  * 데모 시각으로 편마다 상태를 다시 계산한다: 도착 예정 → 처리 중(착륙 ~ 마지막 짐) → 완료.
  * 예측은 도착 예정 1시간 전에 발행된다. 예측값은 운영 모델(/predict)이 예측 시점에 끝난 편 20편으로 낸 값이다
  * (api/livePredict.ts). 아직 받지 못한 편은 발행 전처럼 보인다.
  */
 import { useEffect, useMemo } from 'react'
 
-import { T103_ROWS } from '@/api/data/t103'
 import { useDemoClock, useModels } from '@/api/hooks'
+import { useLineRows } from '@/api/lineData'
 import { livePrediction, requestPredictions, useLivePredictionRevision } from '@/api/livePredict'
 import type { ModelVersionId, Ymdhm } from '@/api/types'
 import { ACTION_GUIDE, CREW_DEADLINE_LEAD_MIN } from '@/design/mock'
@@ -73,17 +73,18 @@ export interface CarouselView {
 export function useCarousel(): CarouselView {
   const clock = useDemoClock()
   const models = useModels()
+  const rows = useLineRows()
   const revision = useLivePredictionRevision()
 
   // 예측 시점이 지난 오늘 편을 운영 모델에서 받는다 (이미 받은 것은 건너뛴다)
   useEffect(() => {
     requestPredictions(clock.now, models.production)
-  }, [clock.now, models.production])
+  }, [clock.now, models.production, rows])
 
   return useMemo(() => {
     const now = clock.now
     const day = now.slice(0, 8)
-    const all: CarouselFlight[] = T103_ROWS.map((row) => {
+    const all: CarouselFlight[] = rows.map((row) => {
       const [id, subtype, seats, eta, landing, lastBag, waitMin] = row
       const e = eta as Ymdhm
       const l = landing as Ymdhm
@@ -151,5 +152,5 @@ export function useCarousel(): CarouselView {
     }
     // revision: 예측이 새로 오면 다시 계산 (값은 livePrediction 으로 읽는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clock.now, models.production, revision])
+  }, [clock.now, models.production, rows, revision])
 }

@@ -9,7 +9,7 @@
  */
 import { useSyncExternalStore } from 'react'
 
-import { T103_ROWS, type T103Row } from '@/api/data/t103'
+import { getLineRows, type T103Row } from '@/api/lineData'
 import { request } from '@/api/http'
 import type { ModelVersionId, Ymdhm } from '@/api/types'
 import { addMinutes } from '@/lib/format'
@@ -17,8 +17,17 @@ import { addMinutes } from '@/lib/format'
 const SEQ_LEN = 20
 const ISSUE_LEAD_MIN = 60
 
-/** 착륙 순서 */
-const BY_LANDING = [...T103_ROWS].sort((a, b) => a[4].localeCompare(b[4]))
+/** 착륙 순서 (편 기록이 바뀌면 다시 정렬) */
+let sortedFrom: readonly T103Row[] | null = null
+let byLanding: T103Row[] = []
+function rowsByLanding(): T103Row[] {
+  const rows = getLineRows()
+  if (rows !== sortedFrom) {
+    byLanding = [...rows].sort((a, b) => a[4].localeCompare(b[4]))
+    sortedFrom = rows
+  }
+  return byLanding
+}
 
 const cache = new Map<string, number>()
 const queued = new Set<string>()
@@ -37,7 +46,7 @@ function emit() {
 /** 예측 시점에 끝난 편 20칸 (모자라면 null) */
 export function sequenceAtIssue(target: T103Row): Array<{ wait_min: number; next_seats: number }> | null {
   const issueAt = addMinutes(target[3] as Ymdhm, -ISSUE_LEAD_MIN)
-  const done = BY_LANDING.filter((r) => r[4] < target[4] && r[5] <= issueAt)
+  const done = rowsByLanding().filter((r) => r[4] < target[4] && r[5] <= issueAt)
   const history = done.slice(-SEQ_LEN)
   if (history.length < SEQ_LEN) return null
   return history.map((h, k) => ({ wait_min: h[6], next_seats: (history[k + 1] ?? target)[2] }))
@@ -67,7 +76,7 @@ async function work() {
 /** 오늘(now 의 날짜) 편 중 예측 시점이 지난 편을 받아 둔다 */
 export function requestPredictions(now: Ymdhm, version: ModelVersionId) {
   const day = now.slice(0, 8)
-  for (const row of T103_ROWS) {
+  for (const row of getLineRows()) {
     if (!row[3].startsWith(day) || addMinutes(row[3] as Ymdhm, -ISSUE_LEAD_MIN) > now) continue
     const key = keyOf(version, row)
     if (cache.has(key) || queued.has(key)) continue
