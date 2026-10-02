@@ -18,7 +18,7 @@ from serving_app.request_timing import timing_middleware  # noqa: E402
 
 configure_aiops_logger(settings.log_dir)
 
-app = FastAPI(title="HAIC Serving & AIOps")
+app = FastAPI(title="짐작 — 수하물 처리 시간 예측 AIOps")
 app.middleware("http")(timing_middleware)  # /predict 응답 시간 기록, 1초 넘으면 [WARN]
 
 
@@ -30,7 +30,7 @@ def model_not_ready(_request: Request, _exc: model_loader.ModelNotReady):
 
 app.include_router(predict.router)
 app.include_router(health.router)
-app.include_router(data.router)  # HAIC 데이터 업로드
+app.include_router(data.router)  # 학습·재학습용 편 기록 CSV 업로드
 app.include_router(logs.router)  # 대시보드: 재학습 로그 파일 조회
 app.include_router(monitoring.router)  # 대시보드: 드리프트 임계값·연속 초과·최근 판정
 app.include_router(models.router)  # 대시보드: 모델 버전·게이트 기록, 운영자 승인·되돌림

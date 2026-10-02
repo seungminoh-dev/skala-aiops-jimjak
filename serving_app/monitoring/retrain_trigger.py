@@ -16,7 +16,7 @@
 
 불합격 시 (기획서 ③ 재학습 "불합격 시")
     새 모델이 배포 기준은 못 넘었지만 같은 검증 데이터에서 현재 모델보다 나으면
-    [ALERT] 수동 승인 필요 를 남긴다 — 기존 모델은 그대로, 운영자가 MLflow에서 그 run 을 확인해 올린다.
+    [ALERT] 수동 승인 필요 를 남긴다 — 기존 모델은 그대로, 운영자가 대시보드 모델 화면(POST /models/approve)에서 승인해 올린다.
     불합격한 데이터 파일은 기억해 두고, 같은 파일로는 다시 재학습하지 않는다(새 업로드가 오면 다시 시도).
 
 반환 dict 는 drift_check 로 그대로 응답에 실린다. predict.py 는 "promoted" 가 참이면 모델을 다시 불러온다.
@@ -118,7 +118,7 @@ def _retrain() -> dict:
     if needs_approval:
         logger.warning(
             "[ALERT] 수동 승인 필요: 새 모델 MAE %.1f분 < 현재 모델 %.1f분이지만 배포 기준 미달 - 기존 모델 유지, "
-            "운영자가 MLflow run %s 확인 후 승격",
+            "운영자가 대시보드 모델 화면에서 승인하면 승격 (run %s)",
             mae, current_mae, result.get("run_id") or "-",
         )
     return {
