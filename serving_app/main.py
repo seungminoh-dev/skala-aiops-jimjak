@@ -2,10 +2,11 @@
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from serving_app import model_loader
+from serving_app import bootstrap, model_loader
 from serving_app.config import settings
 from serving_app.routers import data, health, logs, models, monitoring, predict, scenarios
 
@@ -19,6 +20,13 @@ configure_aiops_logger(settings.log_dir)
 
 app = FastAPI(title="HAIC Serving & AIOps")
 app.middleware("http")(timing_middleware)  # /predict 응답 시간 기록, 1초 넘으면 [WARN]
+
+
+@app.exception_handler(model_loader.ModelNotReady)
+def model_not_ready(_request: Request, _exc: model_loader.ModelNotReady):
+    # 운영 모델이 아직 없음 → 503 (500 이 아니라). 첫 실행이면 기본 모델을 학습하는 중이다 (serving_app/bootstrap.py)
+    return JSONResponse(status_code=503, content={"detail": bootstrap.message()})
+
 
 app.include_router(predict.router)
 app.include_router(health.router)
