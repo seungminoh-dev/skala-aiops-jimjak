@@ -2,10 +2,16 @@ from fastapi import APIRouter
 
 from data.features import SEQ_LEN
 from serving_app import model_loader
-from serving_app.schemas import PredictRequest, PredictResponse, BatchTestRequest, BatchTestResponse
+from serving_app.schemas import PredictRequest, PredictResponse, BatchTestRequest, BatchTestResponse, response_example
 from serving_app.monitoring.retrain_trigger import check_and_trigger
 
 router = APIRouter(tags=["예측"])
+
+# 운영 모델이 아직 없을 때 main.py 가 503 으로 답한다 (첫 실행이면 기본 모델 학습 중, serving_app/bootstrap.py)
+MODEL_NOT_READY = response_example(
+    "운영 모델 미준비 (첫 실행이면 기본 모델 학습 중)",
+    {"detail": "운영 모델이 아직 없어 기본 모델(v1)을 학습하고 있어요. 30초쯤 뒤에 다시 시도하세요."},
+)
 
 # Day3: 최근 예측 기록(actual/predicted)을 쌓아두는 슬라이딩 윈도우.
 # monitoring/drift_detector.py의 WINDOW_SIZE(21)만큼만 유지한다.
@@ -20,7 +26,7 @@ ALERT_THRESHOLD_MIN = 50
                 "바로 다음 편의 좌석 수이며, 마지막 칸에는 예측 대상 편의 좌석 수를 넣습니다. "
                 "운영 적용 시 예측 시점에 처리가 완료된 기록을 사용해야 합니다. "
                 "Lazy 모드에서는 최초 호출 시 모델을 로딩합니다.",
-    responses={422: {"description": "시퀀스가 20편이 아니거나 처리시간·좌석 수가 0 이하인 경우"}})
+    responses={422: {"description": "시퀀스가 20편이 아니거나 처리시간·좌석 수가 0 이하인 경우"}, 503: MODEL_NOT_READY})
 def predict(req: PredictRequest):
     model = model_loader.get_model()
     sequence = [p.model_dump() for p in req.sequence]
@@ -38,7 +44,7 @@ def predict(req: PredictRequest):
                 "배포 기준 통과 시 Production 승격과 서빙 모델 교체를 수행합니다. "
                 "호출은 판정 상태를 변경합니다. 서버가 중복 관측을 제거하지 않으므로 "
                 "같은 배치를 반복 전송해 새로운 판정 증거로 사용하지 마세요.",
-    responses={422: {"description": "41편 미만이거나 처리시간·좌석 수가 0 이하인 경우"}})
+    responses={422: {"description": "41편 미만이거나 처리시간·좌석 수가 0 이하인 경우"}, 503: MODEL_NOT_READY})
 def batch_test(req: BatchTestRequest):
     """
     Day3 드리프트 감지 시뮬레이션 엔드포인트.
