@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from serving_app import model_loader
-from serving_app.routers import data, health, logs, predict
+from serving_app.routers import data, health, logs, monitoring, predict
 
 # monitoring/retrain_trigger.py가 쓰는 "aiops" 로거를 logs/aiops.log 파일에 연결한다.
 # (routers/logs.py가 같은 디렉토리를 읽기 전용으로 노출한다.) 여기서 이 로거 하나만
@@ -39,6 +39,7 @@ app.include_router(predict.router)
 app.include_router(health.router)
 app.include_router(data.router)  # HAIC 데이터 업로드
 app.include_router(logs.router)  # 대시보드: 재학습 로그 파일 조회
+app.include_router(monitoring.router)  # 대시보드: 드리프트 임계값·연속 초과·최근 판정
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")  # 짐작 프론트엔드 (frontend/ 빌드 결과)
