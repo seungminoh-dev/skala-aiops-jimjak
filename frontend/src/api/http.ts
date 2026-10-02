@@ -3,7 +3,7 @@
  *
  * 주소: 같은 출처가 기본 (FastAPI 가 serving_app/static 으로 이 화면을 내준다).
  *       개발 서버(vite)에서는 vite.config.ts 의 proxy 가 /health · /predict … 를 FastAPI 로 넘긴다.
- *       다른 곳의 서버를 보려면 VITE_API_BASE (예: http://127.0.0.1:8000).
+ *       다른 곳의 서버를 보려면 VITE_API_BASE (예: http://127.0.0.1:8077).
  * 오류: FastAPI 의 {detail} 을 ApiError(status, 글자) 로. detail 이 문자열·객체·422 목록 어느 모양이든 글자 하나로 만든다.
  */
 import { ApiError } from '@/api/types'

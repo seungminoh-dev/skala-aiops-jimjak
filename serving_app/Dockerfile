@@ -21,5 +21,5 @@ COPY data/ data/
 COPY scripts/ scripts/
 RUN mkdir -p /state/mlartifacts /state/uploads /state/logs /state/models
 
-EXPOSE 8000
-CMD ["python", "-m", "uvicorn", "serving_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8077
+CMD ["python", "-m", "uvicorn", "serving_app.main:app", "--host", "0.0.0.0", "--port", "8077"]

@@ -11,15 +11,15 @@
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173/#/  — API 는 http://127.0.0.1:8000 으로 넘긴다 (vite.config.ts proxy)
-API_TARGET=http://127.0.0.1:8077 npm run dev   # 서버 주소가 다르면
+npm run dev        # http://localhost:5173/#/  — API 는 http://127.0.0.1:8077 으로 넘긴다 (vite.config.ts proxy)
+API_TARGET=http://127.0.0.1:8090 npm run dev   # 서버 주소가 다르면
 npm run typecheck  # tsc -b
 npm run build      # vite build → frontend/dist (확인용)
 npm run build:serve  # → serving_app/static (FastAPI 가 "/" 에서 서빙. 폴더를 비우고 새로 쓴다)
 ```
 
 FastAPI(`serving_app/main.py`)는 API 라우터를 먼저 등록하고 `serving_app/static` 을 `/` 에 마지막으로 mount 한다.
-`uvicorn serving_app.main:app` 으로 띄우면 `http://localhost:8000/` 에서 이 화면이, `/health` · `/predict` 등은 API 가 응답한다.
+`uvicorn serving_app.main:app --port 8077` 로 띄우면 `http://localhost:8077/` 에서 이 화면이, `/health` · `/predict` 등은 API 가 응답한다.
 서버가 없으면 화면은 "연결 끊김"으로 열리고 5초마다 다시 붙는다 (T1-03 은 비어 보인다).
 
 ### 화면이 쓰는 API
