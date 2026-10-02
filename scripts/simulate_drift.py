@@ -1,88 +1,116 @@
 """
-Day3 드리프트 감지 시뮬레이션 (119~123번 슬라이드).
+드리프트 시나리오 주입 — 기획서 ⑥ 시연 순서 4~6.
 
-핵심 프로세스:
-    1) 기준 통계 산출   - 학습에 쓴 3년치 HAIC 데이터의 평균·표준편차 계산
-    2) 정상 입력 테스트 - 같은 분포의 데이터로 예측 -> RMSE $4 이내 확인 (베이스라인)
-    3) 드리프트 데이터 생성 - 변동성을 인위적으로 3배 키운 가격 데이터 생성
-    4) 드리프트 데이터 주입 - 생성한 데이터를 서빙 서버에 연속 요청으로 전송
-    5) 결과 관찰       - RMSE 상승 -> 알림 로그 발생 -> 재학습 트리거 확인
+시나리오 CSV(data/*_2w.csv)를 서버에 보내 드리프트 판정이 기대대로 나오는지 본다.
+    1) 시나리오 CSV 를 /data/upload 로 올린다 — 재학습이 쓸 "새 기간 데이터"가 된다
+    2) 41편(직전 20편 + 판정 창 21편)씩, 21편 간격으로 잘라 /predict/batch-test 에 보낸다
+       → 배치 하나에 예측 21회, 판정 1회 (k번째 배치는 k*21+20번째 편부터 21편을 예측)
+    3) 배치마다 drift_check(status, MAE, 임계값, 연속 횟수, 사건 태그)를 출력한다
 
-사전 준비: uvicorn serving_app.main:app 서버가 이미 떠 있어야 합니다.
-실행: python scripts/simulate_drift.py
+사전 준비: 서버가 떠 있어야 한다 (예: MODEL_SOURCE=mlflow uvicorn serving_app.main:app --port 8077)
+실행:
+    python scripts/simulate_drift.py                    # 시연 순서: 정상 1회 → 컨베이어 고장 2회 → 인력 부족 2회
+    python scripts/simulate_drift.py staff_shortage 2   # 시나리오 하나, 배치 수
+    python scripts/simulate_drift.py --list             # 시나리오 목록
+환경 변수: API_URL (기본 http://localhost:8077)
 """
+import csv
 import os
 import sys
 
-import numpy as np
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data.features import load_rows
-from data.storage import latest_upload
+from data.features import SEQ_LEN  # noqa: E402
+from serving_app.monitoring.drift_detector import WINDOW_SIZE  # noqa: E402
 
-API_URL = "http://localhost:8000/predict/batch-test"
+API_URL = os.getenv("API_URL", "http://localhost:8077")
+BATCH_N = SEQ_LEN + WINDOW_SIZE  # 41편 → 예측 21회 → 판정 1회
 
+# 시나리오 → (CSV, 기대 판정) — 기획서 "시나리오와 파일 구성"
+SCENARIOS = {
+    "normal": ("data/normal_2w.csv", "ok"),
+    "bhs_failure": ("data/bhs_failure_2w.csv", "ok → alert_only (재학습 없음)"),
+    "staff_shortage": ("data/staff_shortage_2w.csv", "warn → retrain_triggered"),
+    "expansion": ("data/expansion_2w.csv", "warn → retrain_triggered"),
+    "terminal_open": ("data/terminal_open_4w.csv", "alert_only (태그 구간) → 이후 재학습"),
+    "process_change": ("data/process_change_2w.csv", "warn → retrain_triggered (게이트 불합격 가능)"),
+}
 
-def compute_baseline_stats(csv_path: str | None = None) -> tuple[float, float]:
-    """1단계: 학습에 사용한 데이터(업로드된 최신 CSV)의 평균·표준편차."""
-    rows = load_rows(csv_path or latest_upload())
-    closes = np.array([r["Close"] for r in rows])
-    return float(closes.mean()), float(closes.std())
-
-
-# SEQ_LEN(20) + WINDOW_SIZE(21) = 41개를 보내야 배치 하나당 정확히 WINDOW_SIZE(21)개의
-# (predicted, actual) 쌍이 쌓여, drift_detector.py가 바로 판정할 수 있다.
-BATCH_N = 41
-
-# 학습 데이터(실제 IBM 시세 기반)는 추세·모멘텀이 있는 시계열이라, 평균 주변의 순수
-# 백색잡음(iid noise)을 넣으면 "정상" 입력조차 모델이 못 맞춰 오탐(false positive)이
-# 납니다. 그래서 정상/드리프트 배치 모두 일별 수익률(log return) 기반의 랜덤워크로
-# 만들고, 그 수익률의 표준편차(변동성)만 다르게 줍니다.
-NORMAL_SIGMA = 0.012  # 학습 데이터의 안정적 구간과 비슷한 일별 변동성 (~1.2%)
-DRIFT_SIGMA = NORMAL_SIGMA * 3  # 변동성을 3배 키운 드리프트
+# 시연 순서 (기획서 ⑥ 4~6)
+DEMO = [("normal", 1), ("bhs_failure", 2), ("staff_shortage", 2)]
 
 
-def _random_walk(n: int, base: float, sigma: float) -> np.ndarray:
-    log_returns = np.random.normal(0, sigma, n)
-    return base * np.exp(np.cumsum(log_returns))
+def load_flights(csv_path: str) -> list[dict]:
+    with open(csv_path, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    key = "landingDatetime" if "landingDatetime" in rows[0] else "LandingDatetime"
+    rows.sort(key=lambda r: r[key])
+    return [{"wait_min": float(r["wait_min"]), "seats": int(r["seats"]), "event_tag": r.get("event_tag") or ""} for r in rows]
 
 
-def generate_normal_batch(n=BATCH_N, base=165.0, sigma=NORMAL_SIGMA):
-    """학습 데이터와 비슷한 변동성의 정상 입력(랜덤워크)."""
-    return _random_walk(n, base, sigma)
+def upload(csv_path: str) -> None:
+    with open(csv_path, "rb") as f:
+        resp = requests.post(f"{API_URL}/data/upload", files={"file": (os.path.basename(csv_path), f, "text/csv")}, timeout=30)
+    resp.raise_for_status()
+    body = resp.json()
+    print(f"  업로드: {body['filename']} ({body['rows']}행)")
 
 
-def generate_drift_batch(n=BATCH_N, base=165.0, sigma=DRIFT_SIGMA):
-    """변동성을 3배 키운 드리프트 입력 (의도적으로 오차 유발)."""
-    return _random_walk(n, base, sigma)
+def send_batch(flights: list[dict]) -> dict:
+    resp = requests.post(f"{API_URL}/predict/batch-test", json={"flights": flights}, timeout=600)
+    resp.raise_for_status()
+    return resp.json()["drift_check"]
 
 
-def send_batch(prices: np.ndarray, label: str) -> dict:
-    # TODO(Day3): 생성한 배치를 /predict/batch-test 엔드포인트에 순차(또는 일괄) 요청으로 전송하세요.
-    # 힌트:
-    # resp = requests.post(API_URL, json={"prices": prices.tolist()})
-    # resp.raise_for_status()
-    # result = resp.json()
-    # print(f"[{label}] drift_check = {result['drift_check']}")
-    # return result
-    raise NotImplementedError("send_batch를 구현하세요 (실습 4-2)")
+def describe(check: dict) -> str:
+    if check.get("status") == "pending":
+        return f"pending ({check.get('count')}/{check.get('window_size')})"
+    parts = [f"{check['status']:<18}", f"MAE {check['mae']:>5.1f}분", f"임계값 {check['threshold']}분", f"연속 {check['consecutive']}/{check['limit']}"]
+    if check.get("event_tags"):
+        plain = check.get("mae_without_events")
+        parts.append(f"사건 {','.join(check['event_tags'])} {check['event_count']}편" + (f" (제외 MAE {plain}분)" if plain is not None else ""))
+    if check.get("promoted"):
+        parts.append(f"→ 새 모델 {check.get('version', '')} 승격")
+    elif check.get("retrain"):
+        parts.append(f"→ 재학습 결과: {check['retrain']}")
+    return " | ".join(parts)
 
 
-def main():
-    mean, std = compute_baseline_stats()
-    print(f"[1] 기준 통계: mean={mean:.2f}, std={std:.2f}")
+def run(name: str, batches: int, do_upload: bool = True) -> list[dict]:
+    csv_path, expected = SCENARIOS[name]
+    print(f"\n[{name}] {csv_path} — 기대: {expected}")
+    if do_upload:
+        upload(csv_path)
+    flights = load_flights(csv_path)
+    results = []
+    for k in range(batches):
+        chunk = flights[k * WINDOW_SIZE : k * WINDOW_SIZE + BATCH_N]
+        if len(chunk) < BATCH_N:
+            print(f"  배치 {k + 1}: 남은 편이 {len(chunk)}편이라 멈춤")
+            break
+        check = send_batch(chunk)
+        results.append(check)
+        print(f"  배치 {k + 1}: {describe(check)}")
+    return results
 
-    print("[2] 정상 입력 테스트 전송...")
-    normal_batch = generate_normal_batch(base=mean)
-    send_batch(normal_batch, label="normal")
 
-    print("[3-4] 드리프트 입력 생성·주입...")
-    drift_batch = generate_drift_batch(base=mean)
-    send_batch(drift_batch, label="drift_injection")
-
-    print("[5] 결과 확인: requests.log 또는 서버 콘솔에서 [WARN] drift detected 로그를 확인하세요.")
+def main(argv: list[str]) -> None:
+    if "--list" in argv:
+        for name, (path, expected) in SCENARIOS.items():
+            print(f"{name:<16} {path:<30} {expected}")
+        return
+    do_upload = "--no-upload" not in argv
+    args = [a for a in argv if not a.startswith("--")]
+    if args:
+        name = args[0]
+        if name not in SCENARIOS:
+            raise SystemExit(f"모르는 시나리오: {name} (--list 로 목록 확인)")
+        run(name, int(args[1]) if len(args) > 1 else 2, do_upload)
+        return
+    for name, batches in DEMO:
+        run(name, batches, do_upload)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

@@ -1,0 +1,12 @@
+{
+  "threshold": 5.0,
+  "p95": 3.88,
+  "min_threshold": 5.0,
+  "percentile": 95,
+  "windows": 180,
+  "window_mae_mean": 2.98,
+  "window_mae_max": 4.16,
+  "source_csv": "normal_2w.csv",
+  "model_version": "v1",
+  "measured_at": "2026-10-02T00:36:50+00:00"
+}
