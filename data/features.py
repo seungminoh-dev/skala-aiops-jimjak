@@ -93,8 +93,13 @@ def sequence_samples(rows, seq_len=SEQ_LEN):
 
 
 def build_sequences(rows, scaler, seq_len=SEQ_LEN):
+    return encode_samples(sequence_samples(rows, seq_len), scaler)
+
+
+def encode_samples(samples, scaler):
+    """선택한 입력 이력·타깃을 학습·검증 공통 형식으로 변환한다."""
     X, y = [], []
-    for history, target in sequence_samples(rows, seq_len):
+    for history, target in samples:
         following = history[1:] + [target]
         X.append([scaler.transform_point(current["wait_min"], nxt["seats"])
                   for current, nxt in zip(history, following)])

@@ -36,6 +36,10 @@ class Settings:
     training_data_path: str
     upload_dir: str
     log_dir: str
+    retrain_window_days: int
+    retrain_validation_days: int
+    retrain_min_train_samples: int
+    retrain_min_validation_samples: int
 
 
 def load_settings() -> Settings:
@@ -57,7 +61,9 @@ def load_settings() -> Settings:
             else:
                 raise ValueError(f"설정 타입 오류: {field.name}")
     cfg = Settings(**values)
-    for name in ("sequence_length", "base_epochs", "fine_tune_epochs", "batch_size"):
+    for name in ("sequence_length", "base_epochs", "fine_tune_epochs", "batch_size",
+                 "retrain_window_days", "retrain_validation_days",
+                 "retrain_min_train_samples", "retrain_min_validation_samples"):
         if getattr(cfg, name) < 1:
             raise ValueError(f"{name}은 1 이상이어야 합니다.")
     for name in ("learning_rate", "fine_tune_learning_rate", "mae_limit"):
@@ -65,6 +71,8 @@ def load_settings() -> Settings:
             raise ValueError(f"{name}은 유한한 양수여야 합니다.")
     if not 0 < cfg.validation_ratio < 1 or not 0 < cfg.baseline_ratio < 1:
         raise ValueError("validation_ratio와 baseline_ratio는 0과 1 사이여야 합니다.")
+    if cfg.retrain_validation_days >= cfg.retrain_window_days:
+        raise ValueError("재학습 검증 일수는 대상 기간보다 짧아야 합니다.")
     if cfg.model_source not in {"local", "mlflow"} or cfg.loading_mode not in {"lazy", "eager"}:
         raise ValueError("MODEL_SOURCE는 local/mlflow, LOADING_MODE는 lazy/eager입니다.")
     if cfg.model_version and (not cfg.model_version.isdecimal() or int(cfg.model_version) < 1):

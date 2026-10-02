@@ -19,5 +19,9 @@
   "local_model_dir": "serving_app/models/v1",
   "training_data_path": "data/train_normal.csv",
   "upload_dir": "data/uploads",
-  "log_dir": "logs"
+  "log_dir": "logs",
+  "retrain_window_days": 14,
+  "retrain_validation_days": 3,
+  "retrain_min_train_samples": 32,
+  "retrain_min_validation_samples": 21
 }

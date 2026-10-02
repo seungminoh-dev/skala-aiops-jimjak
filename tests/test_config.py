@@ -24,7 +24,9 @@ class ConfigTest(unittest.TestCase):
     def test_invalid_settings_fail_early(self):
         for env in ({'MODEL_SOURCE': 'typo'}, {'LOADING_MODE': 'typo'},
                     {'BASE_EPOCHS': '0'}, {'LEARNING_RATE': 'nan'},
-                    {'MODEL_VERSION': 'v1'}, {'VALIDATION_RATIO': '1'}):
+                    {'MODEL_VERSION': 'v1'}, {'VALIDATION_RATIO': '1'},
+                    {'RETRAIN_MIN_TRAIN_SAMPLES': '0'},
+                    {'RETRAIN_VALIDATION_DAYS': '14'}):
             with self.subTest(env=env), patch.dict(os.environ, env, clear=True):
                 with self.assertRaises(ValueError):
                     load_settings()
