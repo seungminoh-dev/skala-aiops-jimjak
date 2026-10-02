@@ -9,12 +9,10 @@
     alert_only  [ALERT] 일시적 이상 — 알림만, 재학습하지 않음 (그 구간은 재학습 데이터에서도 빠진다)
     retrain     [WARN]  드리프트 감지 (2/2) → [INFO] 재학습 시작 → [OK] 승격 / [FAIL] 배포 차단
 
-재학습 데이터 (기획서 ③ 재학습)
-    가장 최근에 업로드된 CSV(새 기간 데이터)에서 마지막 착륙 시각 기준 최근 2주를 고르고,
-    이벤트 표시(event_tag)가 있는 편을 뺀다. 이것을 train_and_register.fine_tune()에 넘기면
-    Production 가중치에서 이어서 학습(10 epoch)하고, 마지막 며칠(settings.json)을 검증으로 떼어 배포 기준을 재검증한다
-    ([OK] / [FAIL] 로그와 승격은 fine_tune 쪽이 남긴다 — 여기서 다시 쓰지 않는다).
-    재학습이 끝나면(통과·불합격 모두) 연속 횟수를 0 으로 돌린다.
+재학습 데이터
+    최신 업로드 CSV의 원본 행(이벤트·선행 이력 포함)을 fine_tune에 전달한다.
+    최근 14일/마지막 3일 검증 분할과 이벤트 시퀀스 제외는 fine_tune이 담당한다.
+    반환된 promoted로 실제 승격 여부를 확인하고, 실패·보류 사유도 응답에 보존한다.
 
 불합격 시 (기획서 ③ 재학습 "불합격 시")
     새 모델이 배포 기준은 못 넘었지만 같은 검증 데이터에서 현재 모델보다 나으면
@@ -29,11 +27,12 @@ import os
 
 from data.features import SEQ_LEN, load_rows
 from data.storage import latest_upload
+from serving_app.config import settings
 from serving_app.monitoring import drift_detector as dd
 
 logger = logging.getLogger("aiops")
 
-RETRAIN_DAYS = 14  # 최근 2주 (한 라인 약 220편)
+RETRAIN_DAYS = settings.retrain_window_days  # 최근 2주 (한 라인 약 220편)
 MIN_RETRAIN_ROWS = SEQ_LEN + dd.WINDOW_SIZE  # 시퀀스 20편 + 검증할 만큼은 있어야 한다
 _FMT = "%Y%m%d%H%M"
 
@@ -60,21 +59,16 @@ def _log_verdict(v: dict) -> None:
 
 
 def retrain_rows(csv_path: str | None = None, days: int = RETRAIN_DAYS) -> tuple[list[dict], dict]:
-    """재학습에 쓸 행과 요약. 최신 업로드 CSV → 마지막 착륙 기준 최근 days 일 → 사건 편 제외"""
+    """원본 행을 전달한다. 이벤트·기간 필터는 fine_tune의 시퀀스 구성 뒤 적용한다."""
     path = csv_path or latest_upload()
     rows = load_rows(path)
     if not rows:
-        return [], {"file": os.path.basename(path), "rows": 0, "events_excluded": 0}
+        return [], {"file": os.path.basename(path), "rows": 0, "event_rows": 0}
     last = max(dt.datetime.strptime(r["landingDatetime"], _FMT) for r in rows)
-    since = (last - dt.timedelta(days=days)).strftime(_FMT)
-    recent = [r for r in rows if r["landingDatetime"] > since]
-    plain = [r for r in recent if not r["event_tag"]]
-    return plain, {
-        "file": os.path.basename(path),
-        "from": since,
-        "to": last.strftime(_FMT),
-        "rows": len(plain),
-        "events_excluded": len(recent) - len(plain),
+    since = (last.replace(hour=0, minute=0) - dt.timedelta(days=days - 1)).strftime(_FMT)
+    return rows, {
+        "file": os.path.basename(path), "from": since, "to": last.strftime(_FMT),
+        "rows": len(rows), "event_rows": sum(bool(str(r["event_tag"]).strip()) for r in rows),
     }
 
 
@@ -103,8 +97,8 @@ def _retrain() -> dict:
         return {"promoted": False, "version": None, "retrain": {"ok": False, "error": "awaiting_new_data", **info}}
 
     logger.info(
-        "[INFO] 재학습 시작: Production 모델에서 fine-tuning, %s 최근 %d일 %d편 (사건 편 %d편 제외)",
-        info["file"], RETRAIN_DAYS, info["rows"], info["events_excluded"],
+        "[INFO] 재학습 시작: Production 모델에서 fine-tuning, %s 원본 %d편 (기간·이벤트 분할은 학습 함수에서 처리)",
+        info["file"], info["rows"],
     )
     try:
         result = _fine_tune(rows)
@@ -131,8 +125,17 @@ def _retrain() -> dict:
         "promoted": promoted,
         "version": f"v{result['version']}" if promoted and result.get("version") else None,
         "retrain": {
+<<<<<<< HEAD
+            "ok": result.get("status") not in ("failed", "deferred"),
+            "status": result.get("status"),
+            "failure_code": result.get("failure_code"),
+            "error": result.get("failure_reason"),
+            "dataset": result.get("dataset", {}),
+            "rmse": result.get("rmse"),
+=======
             "ok": True,
             "status": result.get("status"),
+>>>>>>> main
             "passed": result.get("passed"),
             "mae": mae,
             "baseline_mae": result.get("baseline_mae"),

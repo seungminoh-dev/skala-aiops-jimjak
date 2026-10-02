@@ -4,10 +4,11 @@ import re
 from fastapi import APIRouter, HTTPException, Query
 
 from serving_app.request_timing import TRACKER
+from serving_app.config import settings
 
 router = APIRouter(prefix="/logs")
 
-LOG_DIR = "logs"
+LOG_DIR = settings.log_dir
 AIOPS_LOG = "aiops.log"
 
 # 2026-10-02 09:40:09 [WARN] 메시지

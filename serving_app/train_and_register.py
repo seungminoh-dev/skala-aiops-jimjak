@@ -23,6 +23,7 @@ from data.storage import latest_upload
 from serving_app.config import project_path, settings
 from serving_app.deployment_gate import evaluate_gate
 from serving_app.lstm_model import build_model
+from serving_app.logging_config import configure_aiops_logger
 from serving_app import model_registry
 
 logger = logging.getLogger("aiops")
@@ -345,7 +346,7 @@ def main():
     parser.add_argument("--csv", help="학습 CSV 경로 (생략: 최신 업로드)")
     parser.add_argument("--mode", choices=("scratch", "fine-tune"), default="scratch")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    configure_aiops_logger(settings.log_dir)
     result = fine_tune(csv_path=args.csv) if args.mode == "fine-tune" else train_and_register(csv_path=args.csv)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

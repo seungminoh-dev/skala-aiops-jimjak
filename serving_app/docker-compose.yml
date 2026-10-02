@@ -1,14 +1,65 @@
-# Day2: FastAPI 서빙 앱 컨테이너 (단일 서비스)
-#
-# MLflow는 별도 서버 없이 이 컨테이너 안에서 로컬 sqlite로 트래킹합니다(Dockerfile 참고).
-# 이미지 빌드 시점에 샘플 데이터 시드 -> 베이스라인 학습 -> MLflow 등록까지 전부 끝나 있으므로,
-# 별도 초기화 단계나 기동 순서 없이 한 번에 띄우면 됩니다.
-#
-#   docker compose -f serving_app/docker-compose.yml up --build
-#
+# 저장소 루트에서 실행:
+#   docker compose -f serving_app/docker-compose.yml build
+#   docker compose -f serving_app/docker-compose.yml run --rm init
+#   docker compose -f serving_app/docker-compose.yml up -d serving-app
+#   curl http://localhost:8000/health
+# UI: docker compose -f serving_app/docker-compose.yml up -d mlflow-ui  (http://localhost:5001)
+# 검증: docker compose -f serving_app/docker-compose.yml exec serving-app python scripts/verify_serving.py
+# Lazy/Eager: docker compose -f serving_app/docker-compose.yml run --rm init python scripts/measure_loading.py --output-dir /state/evidence
+# 재학습: docker compose -f serving_app/docker-compose.yml run --rm init python -m serving_app.train_and_register --mode fine-tune --csv data/staff_shortage_2w.csv
+# CLI에서 승격한 뒤에는 serving-app을 재시작해 서버 캐시도 갱신한다.
+# down/up으로 컨테이너를 재생성해도 jimjak-state 볼륨은 유지된다.
+# down -v는 학습 기록·모델·로그를 삭제하므로 기존 운영 상태를 보관하려면 사용하지 않는다.
+name: jimjak
+
+x-runtime: &runtime
+  image: ${JIMJAK_IMAGE:-jimjak-serving:local}
+  build:
+    context: ..
+    dockerfile: serving_app/Dockerfile
+  environment:
+    MODEL_SOURCE: mlflow
+    LOADING_MODE: ${LOADING_MODE:-eager}
+    MODEL_NAME: ${MODEL_NAME:-JimJak_BagTime}
+    MODEL_VERSION: ${MODEL_VERSION:-}
+    MLFLOW_TRACKING_URI: sqlite:////state/mlflow.db
+    ARTIFACT_ROOT: /state/mlartifacts
+    UPLOAD_DIR: /state/uploads
+    LOG_DIR: /state/logs
+    LOCAL_MODEL_DIR: /state/models/v1
+    DRIFT_THRESHOLD_PATH: /state/drift_threshold.json
+    BASE_EPOCHS: ${BASE_EPOCHS:-100}
+    MLFLOW_DISABLE_AGENT_HINT: '1'
+    MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR: 'false'
+    TF_NUM_INTRAOP_THREADS: '2'
+    TF_NUM_INTEROP_THREADS: '2'
+  volumes:
+    - jimjak-state:/state
+
 services:
+  init:
+    <<: *runtime
+    profiles: [tools]
+    # 기존 Production 번들이 정상이면 재학습하지 않는다. --force로 명시적으로 다시 학습 가능.
+    command: [python, -m, serving_app.initialize_model]
+
   serving-app:
-    build:
-      context: ..
-      dockerfile: serving_app/Dockerfile
-    ports: ["8000:8000"]
+    <<: *runtime
+    ports:
+      - '127.0.0.1:${SERVING_PORT:-8000}:8000'
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  mlflow-ui:
+    <<: *runtime
+    profiles: [tools]
+    command: [python, -m, mlflow, ui, --backend-store-uri, 'sqlite:////state/mlflow.db', --host, 0.0.0.0, --port, '5000']
+    ports:
+      - '127.0.0.1:${MLFLOW_UI_PORT:-5001}:5000'
+
+volumes:
+  jimjak-state:

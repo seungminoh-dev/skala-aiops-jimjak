@@ -15,7 +15,7 @@ from serving_app.routers import data, health, logs, monitoring, predict
 from serving_app.logging_config import configure_aiops_logger  # noqa: E402
 from serving_app.request_timing import timing_middleware  # noqa: E402
 
-configure_aiops_logger("logs")
+configure_aiops_logger(settings.log_dir)
 
 app = FastAPI(title="HAIC Serving & AIOps")
 app.middleware("http")(timing_middleware)  # /predict 응답 시간 기록, 1초 넘으면 [WARN]
