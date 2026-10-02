@@ -11,11 +11,11 @@ import {
 import { useLogs, type LogTag } from '@/api'
 import { LIVE_CAROUSEL } from '@/app/routes'
 import { cn } from '@/lib/cn'
-import { fmtClock } from '@/lib/format'
+import { carouselName, fmtClock } from '@/lib/format'
 
 /**
  * 전체 로그 (터미널 범위) — Vercel Logs 자리. 최신이 위.
- * 수취대 칸은 메시지의 line=… 값을 쓰고, 없으면 T1-07(예측 모델) 로그로 본다.
+ * 수취대 칸은 메시지의 line=… 값을 쓰고, 없으면 T1 3번(예측 모델이 도는 곳) 로그로 본다. 이름은 'T1 3번' 처럼 보인다.
  */
 const carouselOf = (message: string) => /line=(T\d-\d{2})/.exec(message)?.[1] ?? LIVE_CAROUSEL
 
@@ -56,10 +56,10 @@ export function LogsPage() {
         {rows.map((l, i) => {
           const { Icon, cls } = TAG[l.tag]
           return (
-            <li key={`${l.at}-${i}`} className="grid grid-cols-[16px_48px_56px_52px_minmax(0,1fr)] items-start gap-3 px-4 py-2.5">
+            <li key={`${l.at}-${i}`} className="grid grid-cols-[16px_48px_64px_52px_minmax(0,1fr)] items-start gap-3 px-4 py-2.5">
               <Icon size={16} className={cn('mt-0.5', cls)} aria-hidden />
               <span className="type-mono-13 num text-gray-900">{fmtClock(l.at)}</span>
-              <span className="type-mono-13 font-medium text-gray-1000">{carouselOf(l.message)}</span>
+              <span className="type-label-13 font-medium text-gray-1000">{carouselName(carouselOf(l.message))}</span>
               <span className={cn('type-mono-12 mt-px font-medium', cls)}>{l.tag}</span>
               <span className={cn('type-mono-13 break-words', l.highlight ? 'text-blue-900' : 'text-gray-1000')}>{l.message}</span>
             </li>
