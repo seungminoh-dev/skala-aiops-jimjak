@@ -1,4 +1,4 @@
-"""최초 학습과 기존 fine-tuning의 MLflow 기록·평가·승격 공통 경로."""
+"""최초 학습과 기존 fine-tuning의 MLflow 기록·평가·승격 공통 경로"""
 import argparse
 import csv
 import hashlib
@@ -16,8 +16,9 @@ import mlflow.tensorflow
 import numpy as np
 from tensorflow import keras
 
-from data.features import (build_sequences, fit_training_scaler, load_rows,
+from data.features import (build_sequences, encode_samples, fit_training_scaler, load_rows,
                            normalize_rows, sequence_samples, train_test_split)
+from data.retraining import InsufficientRetrainingData, split_retraining_rows
 from data.storage import latest_upload
 from serving_app.config import project_path, settings
 from serving_app.deployment_gate import evaluate_gate
@@ -68,7 +69,7 @@ def _register_if_gate_passed(model_uri: str, run_id: str, gate: dict) -> dict:
     return result
 
 
-def _log_and_register(model, scaler, X_train, run_id, gate):
+def _log_and_register(model, scaler, X_train, run_id, gate, result_context=None):
     for key in ("mae", "rmse", "baseline_mae", "baseline_rmse", "current_mae", "current_rmse"):
         if gate[key] is not None:
             mlflow.log_metric(key, gate[key])
@@ -81,6 +82,9 @@ def _log_and_register(model, scaler, X_train, run_id, gate):
             model, name="model", input_example=X_train[:1], extra_files=extra_files)
     result = _register_if_gate_passed(model_info.model_uri, run_id, gate)
     result["model_uri"] = model_info.model_uri
+    if result_context is not None:
+        # 승격 뒤 기록 실패가 나더라도 호출자에게 실제 승격 여부·버전을 보존한다.
+        result_context.update(result)
     mlflow.log_dict(result, "deployment_result.json")
     mlflow.set_tags({"deployment_status": "promoted" if result["promoted"] else "rejected",
                      "registered_version": result["version"] or "none",
@@ -103,7 +107,7 @@ def _log_data(rows, source, n_train):
         "validation_end": max(r["landingDatetime"] for r in validation_targets),
         "data_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(),
         "n_event_rows": sum(bool(r["event_tag"]) for r in rows),
-        # 5번에서 날짜 기준 분리·이벤트 제외 정책으로 교체할 연결 지점.
+        # 최초 학습은 기존 시간순 비율 분할을 사용한다.
         "split_policy": "chronological_sequence_ratio",
         "event_policy": "not_filtered",
     }
@@ -111,13 +115,13 @@ def _log_data(rows, source, n_train):
     mlflow.log_dict(metadata, "dataset.json")
 
 
-def _train(mode, csv_path=None, rows=None):
+def _train(csv_path=None, rows=None):
     model_registry.configure_experiment()
-    epochs = settings.base_epochs if mode == "scratch" else settings.fine_tune_epochs
-    learning_rate = settings.learning_rate if mode == "scratch" else settings.fine_tune_learning_rate
-    with mlflow.start_run(run_name="base-train" if mode == "scratch" else "fine-tune") as run:
+    epochs = settings.base_epochs
+    learning_rate = settings.learning_rate
+    with mlflow.start_run(run_name="base-train") as run:
         mlflow.log_params({
-            "model_name": MODEL_NAME, "mode": mode, "seed": settings.seed,
+            "model_name": MODEL_NAME, "mode": "scratch", "seed": settings.seed,
             "sequence_length": settings.sequence_length, "epochs": epochs,
             "learning_rate": learning_rate, "batch_size": settings.batch_size,
             "validation_ratio": settings.validation_ratio, "mae_limit": settings.mae_limit,
@@ -148,9 +152,7 @@ def _train(mode, csv_path=None, rows=None):
             current_model = current_scaler = None
             if current is not None:
                 current_model, current_scaler, _ = model_registry.load_version(current.version)
-            if mode == "fine-tune" and current is None:
-                raise ValueError("fine-tuning을 시작할 Production 모델이 없습니다.")
-            scaler = fit_training_scaler(rows, settings.validation_ratio) if mode == "scratch" else current_scaler
+            scaler = fit_training_scaler(rows, settings.validation_ratio)
             X_train, y_train, X_test, y_test = _prepare(rows, scaler)
             _log_data(rows, source, len(y_train))
             current_preds = None
@@ -159,11 +161,7 @@ def _train(mode, csv_path=None, rows=None):
                 _, _, current_X_test, _ = _prepare(rows, current_scaler)
                 current_preds = _predict_minutes(current_model, current_scaler, current_X_test)
             baseline = _validation_baseline(rows, len(y_train))
-            if mode == "scratch":
-                model = build_model()
-            else:
-                model = current_model
-                model.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate), loss="mse")
+            model = build_model()
             model.fit(X_train, y_train, epochs=epochs, batch_size=settings.batch_size,
                       shuffle=False, verbose=0)
             predictions = _predict_minutes(model, scaler, X_test)
@@ -189,24 +187,167 @@ def _train(mode, csv_path=None, rows=None):
 
 def train_and_register(csv_path: str | None = None, rows: list[dict] | None = None) -> dict:
     """최초/전체 학습. 경로 생략 시 최신 업로드 CSV를 사용한다."""
-    return _train("scratch", csv_path=csv_path, rows=rows)
+    return _train(csv_path=csv_path, rows=rows)
 
 
-def fine_tune(rows: list[dict]) -> dict:
-    """현재 Production 번들의 가중치·스케일러를 사용한다.
+def _retraining_result():
+    return {
+        "status": "failed", "promoted": False, "passed": False,
+        "run_id": None, "version": None, "model_version": None, "current_version": None,
+        "mae": None, "rmse": None, "current_mae": None, "current_rmse": None,
+        "baseline_mae": None, "baseline_rmse": None,
+        "metrics": {name: {"mae": None, "rmse": None}
+                    for name in ("candidate", "current", "baseline")},
+        "failure_code": None, "failure_reason": None, "failed_reasons": [], "dataset": {},
+    }
 
-    최근 2주/마지막 3일 검증·이벤트 시퀀스 제외는 5번 작업에서 구현한다.
-    현재는 기존 시간순 비율 분리를 유지한다.
+
+def _sample_arrays(samples, scaler):
+    X, y = encode_samples(samples, scaler)
+    return np.asarray(X, dtype="float32"), y
+
+
+def _log_retraining_dataset(metadata, source):
+    mlflow.log_params({"data_source": source, **metadata})
+    mlflow.log_dict({"data_source": source, **metadata}, "dataset.json")
+
+
+def _finish_retraining_result(result):
+    result["metrics"] = {
+        "candidate": {"mae": result["mae"], "rmse": result["rmse"]},
+        "current": {"mae": result["current_mae"], "rmse": result["current_rmse"]},
+        "baseline": {"mae": result["baseline_mae"], "rmse": result["baseline_rmse"]},
+    }
+    mlflow.set_tags({"deployment_status": result["status"],
+                     "failure_reason": result["failure_reason"] or "",
+                     "failure_code": result["failure_code"] or ""})
+    mlflow.log_dict(result, "deployment_result.json")
+    return result
+
+
+def fine_tune(rows: list[dict] | None = None, csv_path: str | None = None) -> dict:
+    """별도로 읽은 Production 가중치를 최근 데이터로 미세조정하고 결과를 반환한다.
+
+    rows/csv_path 생략 시 최신 업로드 CSV를 사용한다. 서버 캐시 교체는 호출자의 역할이다.
+    status: promoted / rejected / deferred(샘플 부족) / failed(실행 오류).
     """
-    return _train("fine-tune", rows=rows)
+    result = _retraining_result()
+    stage = "tracking"
+    try:
+        model_registry.configure_experiment()
+        with mlflow.start_run(run_name="fine-tune") as run:
+            result["run_id"] = run.info.run_id
+            try:
+                mlflow.log_params({
+                    "model_name": MODEL_NAME, "mode": "fine-tune", "seed": settings.seed,
+                    "sequence_length": settings.sequence_length, "epochs": settings.fine_tune_epochs,
+                    "learning_rate": settings.fine_tune_learning_rate, "batch_size": settings.batch_size,
+                    "mae_limit": settings.mae_limit, "baseline_ratio": settings.baseline_ratio,
+                    "window_days": settings.retrain_window_days,
+                    "validation_days": settings.retrain_validation_days,
+                    "min_train_samples": settings.retrain_min_train_samples,
+                    "min_validation_samples": settings.retrain_min_validation_samples,
+                    "shuffle": False, "scaler_format": model_registry.SCALER_FORMAT,
+                })
+                mlflow.log_dict({k: v for k, v in asdict(settings).items() if k in {
+                    "model_name", "seed", "sequence_length", "fine_tune_epochs",
+                    "fine_tune_learning_rate", "batch_size", "mae_limit", "baseline_ratio",
+                    "retrain_window_days", "retrain_validation_days",
+                    "retrain_min_train_samples", "retrain_min_validation_samples",
+                }}, "training_config.json")
+                stage = "registry"
+                current = _current_version()
+                mlflow.log_param("current_version", str(current.version) if current else "none")
+                if current is not None:
+                    result.update(current_version=str(current.version),
+                                  model_version=model_registry.version_string(current.version))
+                stage = "data"
+                if rows is not None and csv_path is not None:
+                    raise ValueError("rows와 csv_path 중 하나만 지정하세요.")
+                source = "in_memory" if rows is not None else str(project_path(csv_path or latest_upload()))
+                normalized = normalize_rows(rows) if rows is not None else load_rows(source)
+                try:
+                    split = split_retraining_rows(
+                        normalized, window_days=settings.retrain_window_days,
+                        validation_days=settings.retrain_validation_days,
+                        min_train_samples=settings.retrain_min_train_samples,
+                        min_validation_samples=settings.retrain_min_validation_samples,
+                        seq_len=settings.sequence_length)
+                except InsufficientRetrainingData as exc:
+                    result.update(status="deferred", failure_code="insufficient_data",
+                                  failure_reason=str(exc), failed_reasons=[str(exc)], dataset=exc.metadata)
+                    _log_retraining_dataset(exc.metadata, source)
+                    logger.warning("[FAIL] 재학습 보류: %s", exc)
+                    return _finish_retraining_result(result)
+                result["dataset"] = split.metadata
+                split.metadata["data_sha256"] = hashlib.sha256(
+                    json.dumps(normalized, sort_keys=True).encode()).hexdigest()
+                _log_retraining_dataset(split.metadata, source)
+                stage = "registry"
+                if current is None:
+                    result["failure_code"] = "missing_production"
+                    raise ValueError("fine-tuning을 시작할 Production 모델이 없습니다.")
+                stage = "loading"
+                current_model, scaler, _ = model_registry.load_version(current.version)
+                X_train, y_train = _sample_arrays(split.train_samples, scaler)
+                X_valid, y_valid = _sample_arrays(split.validation_samples, scaler)
+                y_train = np.asarray([scaler.scale_wait_min(y) for y in y_train], dtype="float32")
+                current_preds = _predict_minutes(current_model, scaler, X_valid)
+                baseline = [float(np.mean([row["wait_min"] for row in history]))
+                            for history, _ in split.validation_samples]
+                stage = "training"
+                keras.utils.set_random_seed(settings.seed)
+                # 로드한 비교 모델도 수정하지 않도록 별도 가중치 복사본만 학습한다.
+                candidate = keras.models.clone_model(current_model)
+                candidate.set_weights(current_model.get_weights())
+                candidate.compile(optimizer=keras.optimizers.Adam(
+                    learning_rate=settings.fine_tune_learning_rate), loss="mse")
+                logger.info("[INFO] fine-tuning 시작: 기존=%s, 학습=%s, 검증=%s",
+                            result["model_version"], len(y_train), len(y_valid))
+                candidate.fit(X_train, y_train, epochs=settings.fine_tune_epochs,
+                              batch_size=settings.batch_size, shuffle=False, verbose=0)
+                stage = "evaluation"
+                predictions = _predict_minutes(candidate, scaler, X_valid)
+                gate = evaluate_gate(y_valid, predictions, baseline, current_preds)
+                result.update(gate)
+                mlflow.log_table({
+                    "line_id": [target["line_id"] for _, target in split.validation_samples],
+                    "landingDatetime": [target["landingDatetime"] for _, target in split.validation_samples],
+                    "actual_min": y_valid, "candidate_min": predictions,
+                    "current_min": current_preds, "rolling_mean_min": baseline,
+                }, "validation_predictions.json")
+                stage = "registration"
+                registered = _log_and_register(candidate, scaler, X_train, run.info.run_id, gate,
+                                               result_context=result)
+                result.update(registered)
+                result.update(status="promoted" if result["promoted"] else "rejected",
+                              failure_code=None if result["promoted"] else "gate_rejected",
+                              failure_reason=None if result["promoted"] else "; ".join(gate["failed_reasons"]))
+                if not result["promoted"]:
+                    result["model_version"] = model_registry.version_string(result["current_version"])
+                return _finish_retraining_result(result)
+            except Exception as exc:
+                result.update(status="failed", failure_code=result["failure_code"] or f"{stage}_failed",
+                              failure_reason=str(exc), failed_reasons=[str(exc)])
+                _finish_retraining_result(result)
+                mlflow.log_dict(result, "failure.json")
+                # 예외를 밖으로 전달해 MLflow run을 FAILED로 종료하고, 호출자에게는 아래에서 결과 반환.
+                raise
+    except Exception as exc:
+        result.update(status="failed", failure_code=result["failure_code"] or f"{stage}_failed",
+                      failure_reason=str(exc), failed_reasons=[str(exc)])
+        logger.exception("[FAIL] fine-tuning 실패: %s", result["failure_code"])
+        return result
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv", help="학습 CSV 경로 (생략: 최신 업로드)")
+    parser.add_argument("--mode", choices=("scratch", "fine-tune"), default="scratch")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    print(json.dumps(train_and_register(csv_path=args.csv), ensure_ascii=False, indent=2))
+    result = fine_tune(csv_path=args.csv) if args.mode == "fine-tune" else train_and_register(csv_path=args.csv)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
