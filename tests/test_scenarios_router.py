@@ -15,6 +15,16 @@ class ScenariosTest(unittest.TestCase):
         self.assertEqual(normal["event_rows"], 0)
         self.assertGreater(items["bhs_failure"]["event_rows"], 0)
 
+    def test_wait_summary_matches_the_file(self):
+        import csv
+
+        normal = next(s for s in scenarios.list_scenarios() if s["id"] == "normal")
+        with open(scenarios._path("normal"), encoding="utf-8-sig", newline="") as f:
+            waits = [float(r["wait_min"]) for r in csv.DictReader(f)]
+        self.assertEqual(normal["wait_mean"], round(sum(waits) / len(waits), 1))
+        self.assertEqual((normal["wait_min"], normal["wait_max"]), (min(waits), max(waits)))
+        self.assertEqual(normal["over_50"], sum(w > 50 for w in waits))
+
     def test_file_is_the_raw_csv(self):
         response = scenarios.scenario_file("staff_shortage")
         self.assertEqual(response.media_type, "text/csv")

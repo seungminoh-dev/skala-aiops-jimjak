@@ -5,10 +5,11 @@
     1) GET /scenarios/{id}/file 로 원본 CSV 를 받아 /data/upload 로 올린다 — 재학습이 쓸 "새 기간 데이터"
     2) 41편(직전 20편 + 판정 창 21편)씩, 21편 간격으로 잘라 /predict/batch-test 에 보낸다 → 배치 하나에 판정 1회
 
-    GET /scenarios              시나리오 목록 — 파일·행 수·사건 편 수·보낼 수 있는 배치 수
+    GET /scenarios              시나리오 목록 — 파일·행 수·사건 편 수·보낼 수 있는 배치 수·처리 시간 요약
     GET /scenarios/{id}/file    CSV 원본 (text/csv)
 """
 import csv
+import statistics
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -44,12 +45,19 @@ def _summary(scenario_id: str) -> dict:
     path = _path(scenario_id)
     with open(path, encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
+    waits = [float(r["wait_min"]) for r in rows if (r.get("wait_min") or "").strip()]
     return {
         "id": scenario_id,
         "file": path.name,
         "rows": len(rows),
         "event_rows": sum(bool((r.get("event_tag") or "").strip()) for r in rows),
         "batches": max(0, (len(rows) - BATCH_N) // WINDOW_SIZE + 1),
+        # 처리 시간 요약 (분) — 시나리오 화면의 "평균 처리 시간 · 50분 넘는 편"
+        "wait_mean": round(statistics.fmean(waits), 1) if waits else None,
+        "wait_median": statistics.median(waits) if waits else None,
+        "wait_min": min(waits, default=None),
+        "wait_max": max(waits, default=None),
+        "over_50": sum(w > 50 for w in waits),
     }
 
 
