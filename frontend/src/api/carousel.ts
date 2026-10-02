@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo } from 'react'
 
-import { useDemoClock, useModels } from '@/api/hooks'
+import { useDemoClock, useHealth, useModels } from '@/api/hooks'
 import { useLineRows } from '@/api/lineData'
 import { livePrediction, requestPredictions, useLivePredictionRevision } from '@/api/livePredict'
 import type { ModelVersionId, Ymdhm } from '@/api/types'
@@ -73,13 +73,15 @@ export interface CarouselView {
 export function useCarousel(): CarouselView {
   const clock = useDemoClock()
   const models = useModels()
+  const health = useHealth()
   const rows = useLineRows()
   const revision = useLivePredictionRevision()
 
-  // 예측 시점이 지난 오늘 편을 운영 모델에서 받는다 (이미 받은 것은 건너뛴다)
+  // 예측 시점이 지난 오늘 편을 운영 모델에서 받는다 (이미 받은 것은 건너뛴다).
+  // 첫 실행에 모델을 학습하는 동안 실패한 요청은, 모델이 준비되면(health.model → ready) 바로 다시 보낸다
   useEffect(() => {
     requestPredictions(clock.now, models.production)
-  }, [clock.now, models.production, rows])
+  }, [clock.now, models.production, rows, health.model])
 
   return useMemo(() => {
     const now = clock.now
