@@ -112,7 +112,8 @@ export function useLogs(): LogLine[] {
 export function useScenarios(): ScenariosView {
   const lab = useServer((s) => s.lab)
   const batches = useServer((s) => s.monitor.batches)
-  return useMemo(() => buildScenariosView(lab, batches), [lab, batches])
+  const files = useServer((s) => s.scenarioFiles)
+  return useMemo(() => buildScenariosView(lab, batches, files), [lab, batches, files])
 }
 
 /** 현재 데이터 · 미리보기 · 업로드 중 */

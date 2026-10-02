@@ -290,9 +290,22 @@ export type ServerScenarioId =
 /** runScenario 는 둘 다 받는다 (bhs_failure = conveyor_fault, terminal_open = opening_chaos) */
 export type ScenarioKey = ScenarioId | ServerScenarioId
 
+/** 시나리오 데이터 파일 요약 (서버 GET /scenarios) */
+export interface ScenarioFileSummary {
+  fileName: string
+  rows: number
+  eventRows: number
+  /** 보낼 수 있는 배치 수 (41편씩, 21편 간격) */
+  batches: number
+  waitMeanMin: number | null
+  over50Rows: number
+}
+
 export interface ScenarioView extends Scenario {
   /** 서버 id (bhs_failure …) */
   serverId: ServerScenarioId
+  /** 데이터 파일 요약 (서버에서 읽기 전이면 null) */
+  data: ScenarioFileSummary | null
   /** 데이터 파일 (staff_shortage_2w.csv …) */
   dataFile: string
   /** 다음 실행이 몇 번째 단계인가 (0부터). 재학습까지 한 바퀴 돌면 0으로 */
@@ -409,4 +422,6 @@ export interface ServerState {
     preview: CsvRow[]
     uploading: boolean
   }
+  /** 시나리오 데이터 파일 요약 (GET /scenarios) */
+  scenarioFiles: Partial<Record<ServerScenarioId, ScenarioFileSummary>>
 }

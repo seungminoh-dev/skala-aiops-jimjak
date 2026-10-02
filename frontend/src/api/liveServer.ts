@@ -8,6 +8,7 @@
  *   /monitoring/status           임계값 · 연속 초과 · 판정 기록(순번·시각·21편·재학습 결과)
  *   /logs/events                 aiops.log
  *   /data/status                 최근 업로드
+ *   /scenarios                   시나리오 데이터 파일 요약
  * 화면이 들고 있는 것: 데모 시계, 시나리오 실행 횟수·커서·실행 기록, 시나리오로 보낸 편 이름(판정 점 이름 붙이기)
  *
  * 시나리오 실행 = scripts/simulate_drift.py 와 같은 흐름
@@ -272,6 +273,7 @@ function initialState(): ServerState {
     lab: emptyLab(),
     logs: [],
     dataset: { current: emptySummary(liveNow), preview: [], uploading: false },
+    scenarioFiles: {},
   }
 }
 
@@ -555,11 +557,39 @@ async function refreshDataset() {
   })
 }
 
+interface ScenarioListItem {
+  id: ServerScenarioId
+  file: string
+  rows: number
+  event_rows: number
+  batches: number
+  wait_mean: number | null
+  over_50: number
+}
+
+async function refreshScenarioFiles() {
+  const items = await request<ScenarioListItem[]>('/scenarios')
+  const files: ServerState['scenarioFiles'] = {}
+  for (const it of items) {
+    files[it.id] = {
+      fileName: it.file,
+      rows: it.rows,
+      eventRows: it.event_rows,
+      batches: it.batches,
+      waitMeanMin: it.wait_mean,
+      over50Rows: it.over_50,
+    }
+  }
+  patch((s) => ({ ...s, scenarioFiles: files }))
+}
+
 /** 전부 다시 읽기 — 모델 먼저(판정 기록이 운영 버전을 쓴다) */
 async function refreshAll(): Promise<void> {
   if (!(await refreshHealth())) return
   await refreshModels().catch(() => undefined)
-  await Promise.allSettled([refreshMonitor(), refreshLogs(), refreshDataset()])
+  const jobs: Array<Promise<unknown>> = [refreshMonitor(), refreshLogs(), refreshDataset()]
+  if (Object.keys(state.scenarioFiles).length === 0) jobs.push(refreshScenarioFiles())
+  await Promise.allSettled(jobs)
 }
 
 /** 5초마다 — 서버 상태·판정·로그, 모델은 버전이 바뀌었거나 30초마다 */
@@ -570,6 +600,8 @@ async function poll() {
     if (!(await refreshHealth())) return
     const jobs: Array<Promise<unknown>> = [refreshMonitor(), refreshLogs()]
     if (Date.now() - modelsReadAt > MODELS_EVERY_SEC * 1000) jobs.push(refreshModels())
+    // 시작할 때 서버가 없었으면 다시 붙을 때 읽는다
+    if (Object.keys(state.scenarioFiles).length === 0) jobs.push(refreshScenarioFiles())
     await Promise.allSettled(jobs)
   } finally {
     polling = false

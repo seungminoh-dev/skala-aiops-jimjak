@@ -112,7 +112,11 @@ export function buildModelsView(
   }
 }
 
-export function buildScenariosView(lab: ServerState['lab'], batches: readonly BatchRecord[]): ScenariosView {
+export function buildScenariosView(
+  lab: ServerState['lab'],
+  batches: readonly BatchRecord[],
+  files: ServerState['scenarioFiles'],
+): ScenariosView {
   const scenarios = MOCK_LAB.scenarios.map((sc) => {
     const spec = SCENARIO_SPECS[sc.id]
     const cursor = lab.cursors[sc.id] % spec.steps.length
@@ -120,6 +124,7 @@ export function buildScenariosView(lab: ServerState['lab'], batches: readonly Ba
       ...sc,
       runs: lab.runCounts[sc.id],
       serverId: spec.serverId,
+      data: files[spec.serverId] ?? null,
       dataFile: spec.dataFile,
       cursor,
       cycle: spec.steps.length,
