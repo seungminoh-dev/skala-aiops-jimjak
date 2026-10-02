@@ -9,7 +9,7 @@ import { Avatars } from '@/components/shell/Avatars'
 import { CarouselIcon } from '@/components/terminal/CarouselIcon'
 import { TERMINAL_NAME, type TerminalId } from '@/components/terminal/geometry'
 import { cn } from '@/lib/cn'
-import { diffMinutes, fmtClock } from '@/lib/format'
+import { carouselName, diffMinutes, fmtClock } from '@/lib/format'
 import type { Ymdhm } from '@/api'
 
 /**
@@ -93,7 +93,7 @@ function Row({
       {/* 수취대 — 가장 진하게 */}
       <span className="flex min-w-0 items-center gap-2.5">
         <CarouselIcon tier={c.tier} />
-        <span className="type-mono-14 font-medium text-gray-1000">{c.id}</span>
+        <span className="type-label-14 font-semibold text-gray-1000">{carouselName(c.id)}</span>
         <span className="truncate type-label-13 text-gray-900">{TERMINAL_NAME[c.terminal as TerminalId]}</span>
       </span>
 

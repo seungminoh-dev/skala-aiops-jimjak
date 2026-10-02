@@ -5,6 +5,7 @@ import { WarningIcon, XIcon } from '@phosphor-icons/react'
 import { closeAlert, TIER_LABEL, type CarouselTier, type TerminalAlert, type TerminalView } from '@/api'
 import { useReducedMotion } from '@/components/graphics/useReducedMotion'
 import { cn } from '@/lib/cn'
+import { carouselName } from '@/lib/format'
 import { SPRING } from '@/lib/motion'
 
 import { pointOnStadium, stadium, stadiumPath, TERMINAL_NAME, type TerminalId } from './geometry'
@@ -74,7 +75,7 @@ export function TerminalMap2D({ zones, alerts, onEnter, callout }: TerminalMap2D
           {/* 뒷벽 = 윗선 */}
           <ul className="flex border-t border-gray-500">
             {zone.carousels.map((c) => {
-              const label = `${c.id} ${TIER_LABEL[c.tier]}`
+              const label = `${carouselName(c.id)} ${TIER_LABEL[c.tier]}`
               const body = (
                 <>
                   <span className="relative block">
@@ -86,13 +87,13 @@ export function TerminalMap2D({ zones, alerts, onEnter, callout }: TerminalMap2D
                   <span
                     aria-hidden
                     className={cn(
-                      'mt-1 type-mono-12 num',
+                      'mt-1 type-label-12 num',
                       c.live ? 'font-medium text-gray-1000' : c.tier === 'idle' ? 'text-gray-600' : 'text-gray-900',
                       c.tier === 'alert' && 'text-red-900',
                     )}
                     style={{ height: NUMBER_H - 4 }}
                   >
-                    {String(c.number).padStart(2, '0')}
+                    {c.number}
                   </span>
                 </>
               )
@@ -151,7 +152,7 @@ export function TerminalMap2D({ zones, alerts, onEnter, callout }: TerminalMap2D
             <button
               type="button"
               onClick={() => closeAlert(alert.id)}
-              aria-label={`${alert.carouselId} 알림 확인하고 닫기`}
+              aria-label={`${carouselName(alert.carouselId)} 알림 확인하고 닫기`}
               title="확인하고 닫기"
               className="flex size-5 cursor-pointer items-center justify-center rounded-sm transition-colors hover:bg-red-900"
             >

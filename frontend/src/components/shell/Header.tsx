@@ -4,7 +4,7 @@ import { LIVE_CAROUSEL, PAGE_LABEL, scopeOf, TENANT, type PageKey } from '@/app/
 import { actions, reopenAllAlerts, useDemoClock, useHealth, type ModelReadiness } from '@/api'
 import { ConfirmDialog } from '@/components/app/ConfirmDialog'
 import { Button } from '@/components/ui/button'
-import { fmtClock, type ServerStatus } from '@/lib/format'
+import { carouselName, fmtClock, type ServerStatus } from '@/lib/format'
 
 /**
  * 헤더 56px — DESIGN.md "4. 배치" · "6. 데모 조작".
@@ -23,7 +23,7 @@ export function Header({ page }: { page: PageKey }) {
         {scope === 'carousel' && (
           <>
             <span className="flex items-center gap-1.5 text-gray-900">
-              <span className="type-mono-14">{LIVE_CAROUSEL}</span> 수취대
+              {carouselName(LIVE_CAROUSEL)} 수취대
             </span>
             <Slash />
           </>

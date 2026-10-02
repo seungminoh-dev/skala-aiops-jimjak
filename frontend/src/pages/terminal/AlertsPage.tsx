@@ -6,7 +6,7 @@ import { closeAlert, useTerminal, type TerminalAlert } from '@/api'
 import { PAGE_PATH } from '@/app/routes'
 import { AnimatedNumber } from '@/components/common/AnimatedNumber'
 import { cn } from '@/lib/cn'
-import { fmtClock } from '@/lib/format'
+import { carouselName, fmtClock } from '@/lib/format'
 import { FADE, SPRING } from '@/lib/motion'
 
 /**
@@ -63,7 +63,7 @@ function AlertColumn({ title, alerts, open, empty }: { title: string; alerts: Te
               )}
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex items-center gap-2">
-                  <span className="type-mono-14 font-medium text-gray-1000">{a.carouselId}</span>
+                  <span className="type-label-14 font-semibold text-gray-1000">{carouselName(a.carouselId)}</span>
                   <span className={cn('min-w-0 flex-1 truncate type-label-14 font-medium', open ? 'text-gray-1000' : 'text-gray-900')}>{a.title}</span>
                   <span className="type-mono-12 num text-gray-900">{fmtClock(a.at)}</span>
                 </div>
@@ -78,7 +78,7 @@ function AlertColumn({ title, alerts, open, empty }: { title: string; alerts: Te
                 <button
                   type="button"
                   onClick={() => navigate(PAGE_PATH[a.to!])}
-                  aria-label={`${a.carouselId} 자세히`}
+                  aria-label={`${carouselName(a.carouselId)} 자세히`}
                   title="자세히"
                   className="flex size-6 cursor-pointer items-center justify-center rounded-sm text-gray-900 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
                 >
@@ -89,7 +89,7 @@ function AlertColumn({ title, alerts, open, empty }: { title: string; alerts: Te
                 <button
                   type="button"
                   onClick={() => closeAlert(a.id)}
-                  aria-label={`${a.carouselId} 알림 확인하고 닫기`}
+                  aria-label={`${carouselName(a.carouselId)} 알림 확인하고 닫기`}
                   title="확인하고 닫기"
                   className="flex size-6 cursor-pointer items-center justify-center rounded-sm text-gray-900 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
                 >
