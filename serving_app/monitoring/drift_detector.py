@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 WINDOW_SIZE = 21  # 최근 예측 21회
 CONSECUTIVE_LIMIT = 2  # 이벤트 없는 초과가 2회 연속이면 재학습
 MIN_THRESHOLD = 5.0  # 배포 기준 MAE(분). 임계값은 이보다 낮아지지 않는다
-DEFAULT_THRESHOLD = 6.0  # drift_threshold.json 이 없을 때 (보정 전 임시값)
+DEFAULT_THRESHOLD = MIN_THRESHOLD  # drift_threshold.json 이 없을 때 — 보정 전에는 하한(배포 기준 5분)으로 판정
 HISTORY_SIZE = 50  # 상태 API 로 보여 줄 최근 판정 수
 
 THRESHOLD_PATH = os.getenv(
