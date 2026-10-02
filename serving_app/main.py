@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from serving_app import model_loader
 from serving_app.config import settings
-from serving_app.routers import data, health, logs, predict
+from serving_app.routers import data, health, logs, monitoring, predict
 
 # 드리프트 판정·재학습·배포 기준·응답 지연이 쓰는 "aiops" 로거를 logs/aiops.log 와 터미널에 연결한다.
 # 형식: "시각 [태그] 메시지" (태그가 메시지에 있으면 등급을 다시 붙이지 않는다). routers/logs.py 가 읽기 전용으로 노출.
