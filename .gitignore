@@ -21,3 +21,6 @@ data/uploads/*
 !data/uploads/.gitkeep
 serving_app/models/*
 !serving_app/models/.gitkeep
+
+# Docker 시연 결과 (검증 JSON·로그·화면 캡처)
+artifacts/docker_demo/
