@@ -18,7 +18,19 @@ from serving_app.request_timing import timing_middleware  # noqa: E402
 
 configure_aiops_logger(settings.log_dir)
 
-app = FastAPI(title="짐작 — 수하물 처리 시간 예측 AIOps")
+app = FastAPI(
+    title="짐작 | 물류 최적화 AIOps API",
+    description="지능형 공항 물류 운영을 위한 예측 기반 AIOps 플랫폼, 짐작. "
+                "수하물 처리시간 예측으로 물류 자원 배분의 의사결정을 지원하고, "
+                "운영 환경 변화에 대응하는 모델 관리 체계를 제공합니다.",
+    openapi_tags=[
+        {"name": "예측", "description": "단건 예측 및 정답을 포함한 드리프트 시연"},
+        {"name": "모델 상태", "description": "서빙 준비 여부와 실제 모델 버전"},
+        {"name": "데이터", "description": "학습·재학습에 사용할 수하물 CSV"},
+        {"name": "모니터링", "description": "드리프트 임계값과 최근 판정"},
+        {"name": "로그", "description": "운영 로그와 예측 응답 지연"},
+    ],
+)
 app.middleware("http")(timing_middleware)  # /predict 응답 시간 기록, 1초 넘으면 [WARN]
 
 
@@ -30,7 +42,7 @@ def model_not_ready(_request: Request, _exc: model_loader.ModelNotReady):
 
 app.include_router(predict.router)
 app.include_router(health.router)
-app.include_router(data.router)  # 학습·재학습용 편 기록 CSV 업로드
+app.include_router(data.router)  # 수하물 학습·재학습용 편 기록 CSV 업로드
 app.include_router(logs.router)  # 대시보드: 재학습 로그 파일 조회
 app.include_router(monitoring.router)  # 대시보드: 드리프트 임계값·연속 초과·최근 판정
 app.include_router(models.router)  # 대시보드: 모델 버전·게이트 기록, 운영자 승인·되돌림

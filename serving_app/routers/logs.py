@@ -15,8 +15,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 from serving_app.request_timing import TRACKER
 from serving_app.config import settings
+from serving_app.schemas import response_example
 
-router = APIRouter(prefix="/logs")
+router = APIRouter(prefix="/logs", tags=["로그"])
 
 LOG_DIR = settings.log_dir
 AIOPS_LOG = "aiops.log"
@@ -52,7 +53,7 @@ def parse_events(text: str) -> list[dict]:
     return events
 
 
-@router.get("")
+@router.get("", summary="로그 파일 목록 조회", responses={200: response_example("파일명과 크기(byte), 없으면 빈 배열", [{"name": "aiops.log", "size": 1024}])})
 def list_logs():
     if not os.path.isdir(LOG_DIR):
         return []
@@ -64,7 +65,9 @@ def list_logs():
     return files
 
 
-@router.get("/events")
+@router.get("/events", summary="운영 로그를 사건 목록으로 조회",
+    description="시간·태그·메시지로 파싱한 최근 사건을 반환합니다. 로그가 없으면 빈 배열입니다.",
+    responses={200: response_example("태그로 필터링한 사건 목록", [{"time": "2026-10-02 09:40:09", "tag": "WARN", "message": "드리프트 감지 (1/2)"}])})
 def events(
     limit: int = Query(200, ge=1, le=5000, description="최근 N개"),
     tags: str | None = Query(None, description="쉼표로 구분한 태그 (예: WARN,ALERT)"),
@@ -84,12 +87,21 @@ def events(
     return items
 
 
-@router.get("/latency")
+@router.get("/latency", summary="단건 예측 응답 시간 통계 조회",
+    description="단위는 ms입니다. /predict의 최근 최대 500회 통계이며, 배치 테스트는 제외합니다. "
+                "측정이 없으면 p50_ms·p95_ms·max_ms는 null입니다. total·slow_count는 프로세스 누적값입니다.",
+    responses={200: response_example("측정 전 상태", {"count": 0, "total": 0, "slow_count": 0, "threshold_ms": 1000.0, "p50_ms": None, "p95_ms": None, "max_ms": None})})
 def latency():
     return TRACKER.stats()
 
 
-@router.get("/{filename}")
+@router.get("/{filename}", summary="로그 파일 본문 조회",
+    description="순수 파일명만 허용합니다. tail을 지정하면 마지막 N줄을 반환합니다.",
+    responses={
+        200: response_example("파일명과 본문", {"name": "aiops.log", "content": "2026-10-02 09:40:09 [WARN] 드리프트 감지 (1/2)"}),
+        400: response_example("잘못된 파일명", {"detail": "잘못된 파일명입니다"}),
+        404: response_example("파일 없음", {"detail": "로그 파일을 찾을 수 없습니다"}),
+    })
 def read_log(filename: str, tail: int | None = Query(None, ge=1, le=100_000, description="마지막 N줄만")):
     path = _safe_path(filename)
     with open(path, encoding="utf-8") as f:
