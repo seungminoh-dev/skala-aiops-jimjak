@@ -429,8 +429,9 @@ function DataCard() {
       <div className="grid grid-cols-4 gap-6">
         <Fact label="파일" value={<span className="type-mono-13">{d.fileName}</span>} />
         <Fact label="행" value={`${d.rows.toLocaleString()}행`} />
-        <Fact label="평균 처리 시간" value={`${d.waitMeanMin}분`} />
-        <Fact label="50분 넘는 편" value={`${d.over50Rows}편`} />
+        {/* 실서버에서 다른 곳이 올린 파일은 서버가 요약을 주지 않는다 → — */}
+        <Fact label="평균 처리 시간" value={Number.isFinite(d.waitMeanMin) ? `${d.waitMeanMin}분` : '—'} />
+        <Fact label="50분 넘는 편" value={Number.isFinite(d.over50Rows) ? `${d.over50Rows}편` : '—'} />
       </div>
     </Card>
   )

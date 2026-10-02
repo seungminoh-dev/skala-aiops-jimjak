@@ -26,6 +26,10 @@ export function verdictView(v: VerdictInput, engineer = true) {
     case 'retrain_promoted':
       return { Icon: ArrowsClockwiseIcon, cls: 'text-blue-900', label: engineer ? `재학습 → ${v.deployedVersion ?? 'v2'} Production` : `다시 학습 → 새 모델 ${v.deployedVersion ?? 'v2'} 적용` }
     case 'retrain_rejected':
+      if (v.held)
+        return { Icon: XCircleIcon, cls: 'text-red-900', label: engineer ? `재학습 보류 · 같은 데이터, ${v.keptVersion ?? 'v1'} 유지` : `다시 학습 보류 · 새 데이터 기다림, ${v.keptVersion ?? 'v1'} 유지` }
+      if (v.needsApproval)
+        return { Icon: XCircleIcon, cls: 'text-red-900', label: engineer ? `게이트 실패 · 승인 대기, ${v.keptVersion ?? 'v1'} 유지` : `성능 검사 탈락 · 사람 확인 필요, ${v.keptVersion ?? 'v1'} 유지` }
       return { Icon: XCircleIcon, cls: 'text-red-900', label: engineer ? `재학습 → 게이트 실패, ${v.keptVersion ?? 'v1'} 유지` : `다시 학습 → 성능 검사 탈락, ${v.keptVersion ?? 'v1'} 유지` }
     default:
       return { Icon: CircleDashedIcon, cls: 'text-gray-900', label: `판정 보류 ${v.windowCount ?? 0}/${v.windowSize ?? 21}` }

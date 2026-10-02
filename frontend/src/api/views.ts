@@ -30,6 +30,8 @@ export function batchVerdictInput(b: BatchRecord, consecutiveLimit: number): Ver
     eventName: b.eventName,
     deployedVersion: b.deployedVersion,
     keptVersion: b.keptVersion,
+    needsApproval: b.needsApproval,
+    held: b.held,
   }
 }
 

@@ -50,7 +50,7 @@ export function Header({ page }: { page: PageKey }) {
             void actions.resetDemo()
           }}
         >
-          <p className="type-copy-14 text-gray-900">시나리오로 쌓인 기록과 닫은 알림을 되돌리고 처음 상태로 돌아갑니다.</p>
+          <p className="type-copy-14 text-gray-900">시나리오로 쌓인 판정 기록과 닫은 알림을 비우고, 운영 모델을 처음 버전으로 되돌려 데모 시각 10:30 으로 돌아갑니다.</p>
         </ConfirmDialog>
         <DataStatus status={health.status} />
       </div>

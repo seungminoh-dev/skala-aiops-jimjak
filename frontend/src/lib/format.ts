@@ -227,6 +227,10 @@ export interface VerdictInput {
   deployedVersion?: string | null
   /** retrain_rejected: 유지한 버전 (예: 'v1') */
   keptVersion?: string | null
+  /** retrain_rejected: 새 모델이 기준은 못 넘었지만 지금 모델보다 나아 사람 승인을 기다린다 */
+  needsApproval?: boolean
+  /** retrain_rejected: 같은 데이터로 이미 불합격해 재학습을 보류했다 (새 데이터를 기다림) */
+  held?: boolean
 }
 
 /**
@@ -249,7 +253,9 @@ export function verdictStatus(v: VerdictInput): StatusDisplay {
       return { label: `재학습 · ${v.deployedVersion ?? 'v2'} 배포`, dot: 'primary', textClass: TEXT_MUTED }
     case 'retrain_rejected':
       return {
-        label: `재학습 · 게이트 불합격, ${v.keptVersion ?? 'v1'} 유지`,
+        label: v.held
+          ? `재학습 보류 · 새 데이터 대기, ${v.keptVersion ?? 'v1'} 유지`
+          : `재학습 · 게이트 불합격${v.needsApproval ? '(승인 대기)' : ''}, ${v.keptVersion ?? 'v1'} 유지`,
         dot: 'danger',
         textClass: 'text-danger-text',
       }

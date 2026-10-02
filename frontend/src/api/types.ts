@@ -239,7 +239,7 @@ export interface BatchRecord extends Batch {
 }
 
 export interface MonitoringView {
-  /** 드리프트 임계값 6.3 (분) */
+  /** 드리프트 임계값 5.0 (분) — 실서버는 /monitoring/status threshold */
   threshold: number
   /** 게이트 기준 5 (분) */
   gateMae: number

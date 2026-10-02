@@ -6,7 +6,7 @@ import { stepStatus } from '@/lib/format'
 /**
  * 파이프라인 단계 — DESIGN.md "파이프라인 단계".
  * 6단계를 상자 없이 가로 한 줄로 놓고 단계 사이를 1px hairline 선(16px)으로 잇는다.
- * 각 단계: 점 + 이름(body-sm), 아래에 결과 한 줄(mono-sm ink-subtle, 예: "MAE 7.9 > 6.3", "연속 2/2", "v2").
+ * 각 단계: 점 + 이름(body-sm), 아래에 결과 한 줄(mono-sm ink-subtle, 예: "MAE 7.9 > 5.0", "연속 2/2", "v2").
  * - 대기: ink-tertiary 빈 점 + ink-tertiary 글자
  * - 진행 중: primary 점 + ink 글자 "진행 중" (회전·맥박 애니메이션 없음)
  * - 완료: ink-subtle 점 + ink 글자. 재학습·배포 완료는 primary 점

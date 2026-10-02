@@ -23,6 +23,11 @@ export interface StepSpec {
   expectKind: VerdictKind
   /** 실행 결과 맨 아래 "기대 …" 글자 */
   expectText: string
+  /**
+   * 실서버: 이 단계에서 보낼 배치 번호 (0부터. 배치 k = 데이터 파일의 k*21번째 편부터 41편). 없으면 단계 순번.
+   * 기대 판정이 나오는 구간을 고른다 — 예: 컨베이어 고장은 사건 4편이 든 두 번째 배치.
+   */
+  batch?: number
 }
 
 export interface GateSpec {
@@ -84,6 +89,16 @@ const alertOnly = (mae: [number, number], eventCount: number): StepSpec => ({
   expectKind: 'alert_only',
   expectText: '알림만',
 })
+/** 재학습했지만 게이트 불합격 (기획서: 처리 방식 변경은 불합격 가능) */
+const retrainRejected = (mae: [number, number], late: number): StepSpec => ({
+  mae,
+  eventCount: 0,
+  late,
+  expectKind: 'retrain_rejected',
+  expectText: '주의 → 재학습 → 게이트 불합격',
+})
+/** 같은 단계를 실서버에서는 다른 배치로 보낸다 */
+const at = (step: StepSpec, batch: number): StepSpec => ({ ...step, batch })
 
 export const SCENARIO_SPECS: Record<ScenarioId, ScenarioSpec> = {
   normal: { id: 'normal', serverId: 'normal', dataFile: 'normal_2w.csv', eventName: null, steps: [ok], gate: GATE_PASS },
@@ -92,7 +107,8 @@ export const SCENARIO_SPECS: Record<ScenarioId, ScenarioSpec> = {
     serverId: 'bhs_failure',
     dataFile: 'bhs_failure_2w.csv',
     eventName: '컨베이어 고장',
-    steps: [alertOnly([9, 12], 4)],
+    // 실서버: 사건 4편은 두 번째 배치(편 21~61)에 들어 있다
+    steps: [at(alertOnly([9, 12], 4), 1)],
     gate: GATE_PASS,
   },
   staff_shortage: {
@@ -118,7 +134,8 @@ export const SCENARIO_SPECS: Record<ScenarioId, ScenarioSpec> = {
     dataFile: 'terminal_open_4w.csv',
     eventName: '터미널 개장',
     // 개장 2주는 이벤트 표시(알림만) → 표시가 끝난 뒤에도 느리면 주의 → 재학습
-    steps: [alertOnly([9, 11], 8), alertOnly([9, 11], 8), warn([7, 8], 0.85), retrain([7, 8], 0.85)],
+    // 실서버: 개장 2주(배치 0~9)는 사건 표시, 표시가 끝난 배치 11부터 새 수준
+    steps: [at(alertOnly([9, 11], 8), 0), at(alertOnly([9, 11], 8), 5), at(warn([7, 8], 0.85), 11), at(retrain([7, 8], 0.85), 12)],
     gate: GATE_PASS,
   },
   process_change: {
@@ -127,7 +144,7 @@ export const SCENARIO_SPECS: Record<ScenarioId, ScenarioSpec> = {
     dataFile: 'process_change_2w.csv',
     eventName: null,
     // 변동폭이 커졌다 → 오차 부호가 섞인다
-    steps: [warn([7.5, 8.5], 0.55), retrain([7.5, 8.5], 0.55)],
+    steps: [warn([7.5, 8.5], 0.55), retrainRejected([7.5, 8.5], 0.55)],
     gate: GATE_FAIL,
   },
 }

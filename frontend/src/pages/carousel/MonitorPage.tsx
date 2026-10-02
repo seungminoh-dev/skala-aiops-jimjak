@@ -76,7 +76,7 @@ export function MonitorPage() {
           tone={overNow ? 'red' : 'blue'}
           sub={
             <>
-              임계값 <span className="text-red-900">{m.threshold}분</span> (정상 구간 p95, 최소 6.0)
+              임계값 <span className="text-red-900">{m.threshold}분</span> (정상 구간 p95와 배포 기준 {m.gateMae}분 중 큰 값)
             </>
           }
           chart={<Sparkline values={maes} tone={overNow ? 'red' : 'blue'} threshold={m.threshold} height={36} />}

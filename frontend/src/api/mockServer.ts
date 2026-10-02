@@ -5,15 +5,16 @@
  * 상태 (types.ts ServerState)
  * - 데모 시계: 기준 2026-10-01 10:30. 실시간이면 실제로 흐른 시간만큼 간다(1분 단위). 시각 지정(at)은 화면 기준만 바꾼다.
  * - 운영 버전(처음 v1) · 버전 목록 · 게이트 이력 · 운영 버전이 바뀐 기록
- * - 감시 창(21편) · 배치 기록 · 연속 초과 · 임계값 6.3 · 마지막 판정
+ * - 감시 창(21편) · 배치 기록 · 연속 초과 · 임계값 5.0 · 마지막 판정
  * - 시나리오 실행 횟수 · 커서 · 실행 중 · 실행 기록, 로그(aiops 태그 줄), 현재 데이터, 서버 상태
  *
- * 드리프트 규칙 (기획서): 최근 21편 MAE > 6.3 →
+ * 드리프트 규칙 (기획서): 최근 21편 MAE > 5.0 →
  *   이벤트 표시 편이 있으면 알림만(연속 그대로) / 없으면 연속 +1, 2회면 재학습(v_n 에서 이어서 fine-tuning 10 epoch)
  *   → 게이트(검증 MAE ≤ 5 · 단순 방법 대비 10% 개선 · 현재 모델보다 나쁘지 않음) 통과면 새 버전 배포 + 창·연속 초기화,
  *     불합격이면 기존 버전 유지(연속만 초기화).
- *   MAE ≤ 6.3 이면 정상, 연속 0.
+ *   MAE ≤ 5.0 이면 정상, 연속 0.
  */
+import { parseDatasetCsv, summarizeRows } from '@/api/csv'
 import { DEMO_BASE } from '@/api/ops'
 import { delay, hashSeed, seededRandom } from '@/api/random'
 import {
@@ -27,7 +28,6 @@ import {
 import {
   ApiError,
   type BatchRecord,
-  type CsvRow,
   type DatasetSummary,
   type GateCheck,
   type GateRecord,
@@ -54,12 +54,11 @@ import { addMinutes, fmtDecimal } from '@/lib/format'
 
 /* ───────────────────────── 상수 ───────────────────────── */
 
-const THRESHOLD = MOCK_MONITORING.threshold // 6.3
+const THRESHOLD = MOCK_MONITORING.threshold // 5.0
 const GATE_MAE = MOCK_MONITORING.gateMae // 5
 const CONSECUTIVE_LIMIT = MOCK_MONITORING.consecutiveLimit // 2
 const WINDOW_SIZE = 21
-/** 업로드 최소 행 수 = 시퀀스 20 + 창 21 (서버 MIN_ROWS 와 같다) */
-export const MIN_UPLOAD_ROWS = 20 + WINDOW_SIZE
+export { MIN_UPLOAD_ROWS } from '@/api/csv'
 const RUN_MS = 900
 const RUN_RETRAIN_MS = 2500
 const ACTION_MS = 300
@@ -190,13 +189,13 @@ function seedBatches(): BatchRecord[] {
 
 const SEED_LOGS: LogLine[] = [
   log(atDay('0930'), 'INFO', 'serving started - production v1 (BagTime_Predictor)'),
-  log(atDay('0950'), 'OK', 'batch=1 status=ok mae=3.9 threshold=6.3 consecutive=0/2'),
+  log(atDay('0950'), 'OK', 'batch=1 status=ok mae=3.9 threshold=5.0 consecutive=0/2'),
   log(atDay('0952'), 'ALERT', 'event window - line=T1-17 event_tag=bhs_failure'),
   log(atDay('1008'), 'INFO', 'prediction issued - KE082 line=T2-08 wait=57min over_threshold=true'),
-  log(atDay('1010'), 'OK', 'batch=2 status=ok mae=4.3 threshold=6.3 consecutive=0/2'),
+  log(atDay('1010'), 'OK', 'batch=2 status=ok mae=4.3 threshold=5.0 consecutive=0/2'),
   log(atDay('1018'), 'INFO', 'prediction issued - SC4609 line=T1-19 wait=52min over_threshold=true'),
   log(atDay('1028'), 'INFO', 'prediction issued - UA892 line=T1-03 wait=41min over_threshold=false'),
-  log(atDay('1030'), 'OK', 'batch=3 status=ok mae=4.2 threshold=6.3 consecutive=0/2'),
+  log(atDay('1030'), 'OK', 'batch=3 status=ok mae=4.2 threshold=5.0 consecutive=0/2'),
 ]
 
 const zeroCounts = (): Record<ScenarioId, number> =>
@@ -386,6 +385,8 @@ function planRun(s: ServerState, id: ScenarioId): RunPlan {
   if (retrain && !passed) verdict = 'retrain_rejected'
   const deployed: ModelVersionId | null = retrain && passed ? newVersion : null
   const kept: ModelVersionId | null = retrain && !passed ? prod : null
+  // 불합격이지만 지금 모델보다 나으면 사람 승인을 기다린다 (기획서 ③ 재학습 "불합격 시")
+  const needsApproval = retrain && !passed && spec.gate.valMae < spec.gate.currentMae
 
   const batchNo = (s.monitor.batches[s.monitor.batches.length - 1]?.no ?? 0) + 1
   const batch: BatchRecord = {
@@ -401,6 +402,7 @@ function planRun(s: ServerState, id: ScenarioId): RunPlan {
     modelVersion: prod,
     deployedVersion: deployed,
     keptVersion: kept,
+    needsApproval,
     points,
     scenarioId: id,
   }
@@ -441,7 +443,7 @@ function planRun(s: ServerState, id: ScenarioId): RunPlan {
     consecutive: verdict === 'alert_only' ? ['skipped', null] : ['done', `연속 ${consecutive}/${CONSECUTIVE_LIMIT}`],
     retrain: retrain ? ['done', `검증 MAE ${fmtDecimal(spec.gate.valMae)}`] : ['skipped', null],
     gate: retrain ? (passed ? ['done', `${checks!.length}/${checks!.length} 통과`] : ['failed', `${failedChecks}/${checks!.length} 불합격`]) : ['skipped', null],
-    deploy: deployed ? ['done', deployed] : ['skipped', null],
+    deploy: deployed ? ['done', deployed] : needsApproval ? ['waiting', '사람 승인 대기'] : ['skipped', null],
   })
 
   const outcome: VerdictInput = {
@@ -453,6 +455,7 @@ function planRun(s: ServerState, id: ScenarioId): RunPlan {
     eventName: batch.eventName,
     deployedVersion: deployed,
     keptVersion: kept,
+    needsApproval,
   }
 
   const run: PipelineRun = {
@@ -508,9 +511,14 @@ function planRun(s: ServerState, id: ScenarioId): RunPlan {
         base: prod,
         checks,
         passed,
-        decision: deployed ? `${deployed} 배포` : `${prod} 유지`,
+        decision: deployed ? `${deployed} 배포` : needsApproval ? '승인 대기' : `${prod} 유지`,
+        runId: `gate-${t}-${runNo}`,
+        needsApproval,
+        approvedVersion: null,
       }
-      models = { ...models, gates: [...models.gates, gate] }
+      // 새 게이트가 생기면 앞의 승인 대기는 지난 것이 된다
+      const settled = models.gates.map((g) => (g.needsApproval ? { ...g, needsApproval: false, decision: `${g.base} 유지` } : g))
+      models = { ...models, gates: [...settled, gate] }
     }
 
     return {
@@ -597,20 +605,52 @@ export async function promoteVersion(version: ModelVersionId): Promise<void> {
   })
 }
 
+/**
+ * 승인 대기 후보 적용 (게이트 불합격이지만 지금 모델보다 나은 새 모델) — 실서버 POST /models/approve 와 같은 결과.
+ * 404 모르는 후보 · 409 승인 대기가 아님 / 시나리오 실행 중
+ */
+export async function approveCandidate(runId: string): Promise<{ version: ModelVersionId }> {
+  await delay(ACTION_MS)
+  const s = state
+  if (s.lab.runningId) throw new ApiError(409, '시나리오 실행 중에는 승인할 수 없습니다.')
+  const gate = s.models.gates.find((g) => g.runId === runId)
+  if (!gate) throw new ApiError(404, '학습 기록을 찾을 수 없습니다.')
+  if (!gate.needsApproval) throw new ApiError(409, '승인을 기다리는 후보가 아닙니다.')
+  const t = s.clock.liveNow
+  const from = s.models.production
+  const version = nextVersionId(s.models.versions)
+  const valMae = Number(gate.checks[0]?.value) || 0
+  const versions: ModelVersion[] = [
+    ...s.models.versions.map((v) => (v.version === from ? { ...v, status: 'retired' as const, retiredAt: t } : v)),
+    {
+      version,
+      method: 'fine-tuning',
+      base: gate.base,
+      trainedAt: gate.at,
+      valMae,
+      epochs: 10,
+      trainData: `${gate.base}에서 이어서 · 운영자 승인`,
+      status: 'production',
+      deployedAt: t,
+      retiredAt: null,
+    },
+  ]
+  const gates = s.models.gates.map((g) =>
+    g.runId === runId ? { ...g, candidate: version, needsApproval: false, approvedVersion: version, decision: `${version} 승인 적용` } : g,
+  )
+  setState({
+    ...s,
+    models: { ...s.models, production: version, versions, gates, history: [...s.models.history, { at: t, version }] },
+    monitor: { ...s.monitor, window: [], consecutive: 0 },
+    logs: pushLogs(s.logs, [log(t, 'OK', `운영자 승인: 배포 기준 미달 후보를 Production ${version} 로 적용 (이전 ${from})`, true)]),
+  })
+  return { version }
+}
+
 /* ───────────────────────── 데이터 업로드 ───────────────────────── */
 
-function splitCsvLine(line: string): string[] {
-  return line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''))
-}
-
-function median(sorted: readonly number[]): number {
-  if (sorted.length === 0) return 0
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[mid] : round1((sorted[mid - 1] + sorted[mid]) / 2)
-}
-
 /**
- * CSV 업로드 — 브라우저에서 읽어 서버와 같은 검사를 한다.
+ * CSV 업로드 — 브라우저에서 읽어 서버와 같은 검사를 한다 (api/csv.ts).
  * 400: 11컬럼(flightId … event_tag, 대소문자 무시)이 다 없으면 / 41행 미만이면. 성공이면 현재 데이터·미리보기를 바꾼다.
  */
 export async function uploadCsv(file: File): Promise<UploadResponse> {
@@ -624,38 +664,8 @@ export async function uploadCsv(file: File): Promise<UploadResponse> {
     } catch {
       throw new ApiError(400, 'UTF-8로 인코딩된 CSV 파일만 업로드할 수 있습니다.')
     }
-    const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((line) => line.trim() !== '')
-    const header = splitCsvLine(lines[0] ?? '')
-    const index = new Map(header.map((h, i) => [h.toLowerCase(), i]))
-    const missing = csvColumns.filter((c) => !index.has(c.toLowerCase()))
-    if (missing.length > 0) {
-      throw new ApiError(400, `CSV에 [${csvColumns.map((c) => `'${c}'`).join(', ')}] 컬럼이 모두 있어야 합니다.`)
-    }
-    const body = lines.slice(1).map(splitCsvLine)
-    if (body.length < MIN_UPLOAD_ROWS) throw new ApiError(400, `최소 ${MIN_UPLOAD_ROWS}행 이상의 데이터가 필요합니다.`)
-
-    const rows: CsvRow[] = body.map((cells) => toCsvRow(csvColumns.map((c) => cells[index.get(c.toLowerCase())!] ?? '')))
-    const waits = rows.map((r) => Number(r.wait_min)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b)
-    const landings = rows.map((r) => r.landingDatetime).filter((v) => /^\d{12}$/.test(v)).sort()
-    const lineIds = new Set(rows.map((r) => r.line_id).filter(Boolean))
-    const t1Rows = rows.filter((r) => r.line_id.startsWith('T1')).length
-    const current: DatasetSummary = {
-      fileName: file.name,
-      source: '업로드한 파일',
-      rows: rows.length,
-      columns: csvColumns.length,
-      lines: lineIds.size,
-      t1Rows,
-      t2Rows: rows.filter((r) => r.line_id.startsWith('T2')).length,
-      landingFrom: landings[0] ?? t,
-      landingTo: landings[landings.length - 1] ?? t,
-      waitMeanMin: waits.length ? round1(waits.reduce((s, n) => s + n, 0) / waits.length) : 0,
-      waitMedianMin: median(waits),
-      waitMinMin: waits[0] ?? 0,
-      waitMaxMin: waits[waits.length - 1] ?? 0,
-      over50Rows: waits.filter((n) => n > 50).length,
-      eventRows: rows.filter((r) => r.event_tag.trim() !== '').length,
-    }
+    const rows = parseDatasetCsv(text)
+    const current: DatasetSummary = summarizeRows(rows, file.name, '업로드한 파일', t)
     setState({
       ...state,
       dataset: { current, preview: rows.slice(0, 10), uploading: false },
