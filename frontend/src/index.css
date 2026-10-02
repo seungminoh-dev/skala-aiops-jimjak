@@ -1,0 +1,502 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+
+/*
+ * 글꼴 — DESIGN.md "글자"
+ * - Geist Variable · Geist Mono Variable: @fontsource-variable (main.tsx 에서 import)
+ * - Pretendard Variable: index.html 의 jsDelivr CDN. Geist 에 한글이 없어서 한글은 Pretendard 가 맡는다.
+ */
+
+/* Tailwind 기본 팔레트·그림자·애니메이션을 지우고 Geist 토큰만 남긴다 */
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+  --blur-*: initial;
+  --animate-*: initial;
+  --font-*: initial;
+
+  --default-transition-duration: 150ms;
+}
+
+@theme inline {
+  /* Geist 색 */
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-background-100: var(--ds-background-100);
+  --color-background-200: var(--ds-background-200);
+
+  --color-gray-100: var(--ds-gray-100);
+  --color-gray-200: var(--ds-gray-200);
+  --color-gray-300: var(--ds-gray-300);
+  --color-gray-400: var(--ds-gray-400);
+  --color-gray-500: var(--ds-gray-500);
+  --color-gray-600: var(--ds-gray-600);
+  --color-gray-700: var(--ds-gray-700);
+  --color-gray-800: var(--ds-gray-800);
+  --color-gray-900: var(--ds-gray-900);
+  --color-gray-1000: var(--ds-gray-1000);
+
+  --color-gray-alpha-100: var(--ds-gray-alpha-100);
+  --color-gray-alpha-200: var(--ds-gray-alpha-200);
+  --color-gray-alpha-300: var(--ds-gray-alpha-300);
+  --color-gray-alpha-400: var(--ds-gray-alpha-400);
+  --color-gray-alpha-500: var(--ds-gray-alpha-500);
+  --color-gray-alpha-600: var(--ds-gray-alpha-600);
+
+  --color-blue-100: var(--ds-blue-100);
+  --color-blue-200: var(--ds-blue-200);
+  --color-blue-400: var(--ds-blue-400);
+  --color-blue-700: var(--ds-blue-700);
+  --color-blue-900: var(--ds-blue-900);
+
+  --color-red-100: var(--ds-red-100);
+  --color-red-200: var(--ds-red-200);
+  --color-red-400: var(--ds-red-400);
+  --color-red-700: var(--ds-red-700);
+  --color-red-900: var(--ds-red-900);
+
+  --color-amber-100: var(--ds-amber-100);
+  --color-amber-200: var(--ds-amber-200);
+  --color-amber-400: var(--ds-amber-400);
+  --color-amber-700: var(--ds-amber-700);
+  --color-amber-900: var(--ds-amber-900);
+
+  --color-green-100: var(--ds-green-100);
+  --color-green-200: var(--ds-green-200);
+  --color-green-400: var(--ds-green-400);
+  --color-green-700: var(--ds-green-700);
+  --color-green-900: var(--ds-green-900);
+
+  /* shadcn 색 (components/ui) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* 옛 토큰 이름 (임시 — tokens.css 참고) */
+  --color-canvas: var(--canvas);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-ink-tertiary: var(--ink-tertiary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-border: var(--primary-border);
+  --color-primary-text: var(--primary-text);
+  --color-on-primary: var(--on-primary);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-signal: var(--signal);
+  --color-signal-subtle: var(--signal-subtle);
+  --color-on-signal: var(--on-signal);
+  --color-board: var(--board);
+  --color-board-line: var(--board-line);
+  --color-on-board: var(--on-board);
+  --color-overlay: var(--overlay);
+  --color-chart-actual: var(--chart-actual);
+  --color-chart-predicted: var(--chart-predicted);
+  --color-chart-threshold: var(--chart-threshold);
+  --color-chart-reference: var(--chart-reference);
+
+  /* 그림자 (Geist) */
+  --shadow-border: var(--ds-shadow-border);
+  --shadow-border-small: var(--ds-shadow-border-small);
+  --shadow-border-medium: var(--ds-shadow-border-medium);
+  --shadow-menu: var(--ds-shadow-menu);
+  --shadow-modal: var(--ds-shadow-modal);
+  --shadow-tooltip: var(--ds-shadow-tooltip);
+  --shadow-depth-3: var(--ds-shadow-menu); /* 옛 이름 */
+
+  /* 둥글기 — Geist: 6px 기본, 12px 메뉴·대화상자·큰 상자, 16px 전체 화면 */
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+
+  /* 글꼴 */
+  --font-sans: "Geist Variable", "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, Menlo, Monaco, "Pretendard Variable", monospace;
+
+  /* 움직임 (Geist) */
+  --ease-swift: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  --animate-fade-in: fade-in 200ms ease-out;
+  --animate-fade-out: fade-out 150ms ease-in;
+  --animate-modal-in: modal-in 300ms cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  --animate-drawer-in: drawer-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-drawer-out: drawer-out 150ms ease-in;
+  /* 진행 중 아이콘 회전 */
+  --animate-spin: spin 0.9s linear infinite;
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* 그래프가 그려지는 움직임 (움직임 줄이기면 끈다) */
+  --animate-bar-grow: bar-grow 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-line-draw: line-draw 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-up: fade-up 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes bar-grow {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes line-draw {
+    from { stroke-dashoffset: var(--line-length, 1000); }
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 확인 필요 수취대 — 고리 둘레로 빨간 테두리가 퍼진다 */
+  --animate-alert-pulse: alert-pulse 1.6s ease-out infinite;
+
+  @keyframes alert-pulse {
+    from { opacity: 0.7; transform: scale(1); }
+    to { opacity: 0; transform: scale(1.35); }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes drawer-in {
+    from { opacity: 0; transform: translateX(12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes drawer-out {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(8px); }
+  }
+}
+
+/*
+ * 글자 — Geist typography. 이름은 type- 접두사 (text- 는 tailwind-merge 가 글자색으로 오인한다).
+ * 크기·줄 높이·굵기·자간만 정한다. 색은 따로 준다.
+ */
+@utility type-heading-48 {
+  font-family: var(--font-sans);
+  font-size: 48px;
+  line-height: 56px;
+  font-weight: 600;
+  letter-spacing: -2.88px;
+}
+@utility type-heading-32 {
+  font-family: var(--font-sans);
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 600;
+  letter-spacing: -1.28px;
+}
+@utility type-heading-24 {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.96px;
+}
+@utility type-heading-20 {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+@utility type-heading-16 {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.32px;
+}
+@utility type-heading-14 {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+}
+@utility type-label-14 {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-label-13 {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-label-12 {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-copy-14 {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-copy-13 {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-button-14 {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+@utility type-mono-14 {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-mono-13 {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-mono-12 {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* 옛 글자 이름 → Geist 값 (임시. 화면을 새로 짜면 지운다) */
+@utility type-hero-value {
+  font-family: var(--font-sans);
+  font-size: 48px;
+  line-height: 56px;
+  font-weight: 600;
+  letter-spacing: -2.88px;
+}
+@utility type-page-title {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.96px;
+}
+@utility type-figure-value {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.96px;
+}
+@utility type-wordmark {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.32px;
+}
+@utility type-section-title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.32px;
+}
+@utility type-body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+@utility type-body-sm {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+@utility type-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+}
+@utility type-caption {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+@utility type-button {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+@utility type-mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+}
+@utility type-mono-sm {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+/* 숫자 — 고정폭 숫자 */
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 면 — Geist materials */
+@utility material-base {
+  background-color: var(--ds-background-100);
+  box-shadow: var(--ds-shadow-border);
+  border-radius: 6px;
+}
+@utility material-small {
+  background-color: var(--ds-background-100);
+  box-shadow: var(--ds-shadow-border-small);
+  border-radius: 6px;
+}
+@utility material-medium {
+  background-color: var(--ds-background-100);
+  box-shadow: var(--ds-shadow-border-medium);
+  border-radius: 12px;
+}
+@utility material-menu {
+  background-color: var(--ds-background-100);
+  box-shadow: var(--ds-shadow-menu);
+  border-radius: 12px;
+}
+@utility material-modal {
+  background-color: var(--ds-background-100);
+  box-shadow: var(--ds-shadow-modal);
+  border-radius: 12px;
+}
+@utility material-tooltip {
+  background-color: var(--ds-background-100);
+  box-shadow: var(--ds-shadow-tooltip);
+  border-radius: 6px;
+}
+
+/* 마스코트 픽셀 아트 — 정수 배율로 그릴 때 칸 경계를 흐리지 않는다 */
+@utility pixelated {
+  image-rendering: pixelated;
+}
+
+/* 펼치기 — grid 행 0fr → 1fr */
+@utility disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@utility disclosure-open {
+  grid-template-rows: 1fr;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--ds-background-200);
+    color: var(--ds-gray-1000);
+    font-size: 14px;
+    line-height: 20px;
+    min-width: 1280px;
+  }
+  /* 포커스 링 — Geist: 흰 2px + blue-700 2px */
+  :focus-visible {
+    outline: 2px solid var(--ds-blue-700);
+    outline-offset: 2px;
+  }
+  ::placeholder {
+    color: var(--ds-gray-700);
+  }
+}
+
+/* 토스트(sonner) — 투명도만 */
+[data-sonner-toast] {
+  transition-property: opacity !important;
+  transition-duration: 150ms !important;
+}
+
+/* 움직임 줄이기: 전환을 끈다 */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='sheet-content'],
+  [data-slot='sheet-overlay'],
+  [data-slot='dialog-content'],
+  [data-slot='dialog-overlay'] {
+    animation: none !important;
+  }
+  .disclosure {
+    transition: none;
+  }
+  .animate-alert-pulse,
+  .animate-bar-grow,
+  .animate-line-draw,
+  .animate-fade-up {
+    animation: none;
+  }
+}
