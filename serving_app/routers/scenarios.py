@@ -17,8 +17,9 @@ from fastapi.responses import FileResponse
 from data.features import SEQ_LEN
 from serving_app.config import project_path
 from serving_app.monitoring.drift_detector import WINDOW_SIZE
+from serving_app.schemas import response_example
 
-router = APIRouter(prefix="/scenarios")
+router = APIRouter(prefix="/scenarios", tags=["시나리오"])
 
 # 시나리오 id → 데이터 파일 (기획서 "시나리오와 파일 구성", scripts/simulate_drift.py 와 같은 이름)
 SCENARIO_FILES = {
@@ -61,12 +62,26 @@ def _summary(scenario_id: str) -> dict:
     }
 
 
-@router.get("")
+@router.get("", summary="드리프트 시나리오 데이터 목록",
+    description="대시보드 시나리오 화면이 쓰는 6가지 데이터 파일의 요약입니다. batches 는 41편(직전 20편 + 판정 창 21편)씩 "
+                "21편 간격으로 보낼 수 있는 배치 수이고, 처리 시간은 분 단위입니다.",
+    responses={200: response_example("시나리오별 요약 (6개 중 1개)", [{
+        "id": "normal", "file": "normal_2w.csv", "rows": 220, "event_rows": 0, "batches": 9,
+        "wait_mean": 35.2, "wait_median": 35.0, "wait_min": 22.0, "wait_max": 53.0, "over_50": 1}])})
 def list_scenarios():
     return [_summary(scenario_id) for scenario_id in SCENARIO_FILES]
 
 
-@router.get("/{scenario_id}/file")
+@router.get("/{scenario_id}/file", summary="시나리오 CSV 원본 받기",
+    description="scenario_id: normal · bhs_failure · staff_shortage · expansion · terminal_open · process_change. "
+                "받은 파일을 POST /data/upload 로 올리고 41편씩 POST /predict/batch-test 로 보내면 "
+                "scripts/simulate_drift.py 와 같은 흐름으로 시나리오가 실행됩니다.",
+    responses={
+        200: {"description": "CSV 원본 (text/csv)", "content": {"text/csv": {"example":
+            "flightId,terminalId,bagCarouselId,line_id,aircraftSubtype,seats,estimatedDatetime,LandingDatetime,bagLastTime,wait_min,event_tag\n"
+            "LJ690,P01,3,T1-03,738,189,202610010050,202610010043,202610010117,34,\n"}}},
+        404: response_example("알 수 없는 시나리오", {"detail": "알 수 없는 시나리오입니다: abc"}),
+    })
 def scenario_file(scenario_id: str):
     path = _path(scenario_id)
     return FileResponse(path, media_type="text/csv", filename=path.name)

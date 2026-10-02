@@ -17,28 +17,47 @@ import os
 import mlflow
 from fastapi import APIRouter, HTTPException
 from mlflow.exceptions import MlflowException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from serving_app import model_loader, model_registry
 from serving_app.config import settings
 from serving_app.monitoring import drift_detector as dd
 from serving_app.monitoring import retrain_trigger
 from serving_app.routers import predict
+from serving_app.schemas import response_example
 
 logger = logging.getLogger("aiops")
 
-router = APIRouter(prefix="/models")
+router = APIRouter(prefix="/models", tags=["모델 관리"])
 
 TRAINING_RUNS = ("base-train", "fine-tune")  # 게이트까지 가는 실행 (rollback 실행은 빼고)
 GATE_STATUSES = ("promoted", "rejected")
 
 
 class ApproveRequest(BaseModel):
-    run_id: str
+    run_id: str = Field(..., description="승인할 학습 실행 id — GET /models 의 gates[] 중 needs_approval 이 true 인 것",
+                        examples=["fa0ce48edc1a433480168687886c92c8"])
 
 
 class RollbackRequest(BaseModel):
-    version: str  # "v1" 또는 "1"
+    version: str = Field(..., description="Production 으로 되돌릴 보관 버전 (\"v1\" 또는 \"1\")", examples=["v1"])
+
+
+# 응답 예시 — 인력 부족 재학습으로 v2 가 운영 중이고, 처리 방식 변경 재학습 후보가 승인을 기다리는 상태
+_VERSION_EXAMPLE = {
+    "version": "v2", "stage": "Production", "run_id": "7c2d1e0b9a8f4e6d8c1b2a3f4e5d6c7b",
+    "created_at": "2026-10-02T15:12:04+09:00", "updated_at": "2026-10-02T15:12:05+09:00", "approved": False,
+    "mode": "fine-tune", "base_version": "v1", "mae": 4.13, "baseline_mae": 5.37, "current_mae": 10.42,
+    "epochs": 10, "n_rows": 220, "n_train": 142, "n_validation": 58, "data_source": "jimjak_1790918789995250000.csv",
+}
+_GATE_EXAMPLE = {
+    "run_id": "fa0ce48edc1a433480168687886c92c8", "run_name": "fine-tune", "at": "2026-10-02T15:14:31+09:00", "status": "rejected",
+    "passed": False, "failed_reasons": ["MAE가 5분을 초과했습니다."], "version": None,
+    "needs_approval": True, "approved_version": None, "mode": "fine-tune", "base_version": "v2",
+    "mae": 5.31, "baseline_mae": 6.04, "current_mae": 6.12, "epochs": 10, "n_rows": 220, "n_train": 141,
+    "n_validation": 59, "data_source": "jimjak_1790918811542969000.csv",
+}
+_CONFLICT = "승인을 기다리는 후보가 아닙니다. (이미 승인했거나, 그 뒤에 운영 모델이 바뀌었습니다)"
 
 
 def _iso(ms: int | None) -> str | None:
@@ -143,12 +162,25 @@ def _swap_serving_model() -> None:
     retrain_trigger._rejected_file = None
 
 
-@router.get("")
+@router.get("", summary="모델 버전·배포 기준 기록 조회",
+    description="MLflow 레지스트리의 버전(Production·Archived)과 학습·재학습 실행마다의 배포 기준(게이트) 결과를 반환합니다. "
+                "gates[].needs_approval 이 true 인 후보는 배포 기준에는 못 미쳤지만 같은 검증 데이터에서 "
+                "현재 운영 모델보다 MAE 가 작아 운영자 승인을 기다리는 모델입니다. 조회만으로 아무것도 바꾸지 않습니다.",
+    responses={200: response_example("운영 v2 · 승인 대기 후보 1개 (versions·gates 는 일부만)",
+        {"model_name": "JimJak_BagTime", "production": "v2", "versions": [_VERSION_EXAMPLE], "gates": [_GATE_EXAMPLE]})})
 def list_models():
     return _models_view()
 
 
-@router.post("/approve")
+@router.post("/approve", summary="승인 대기 후보를 운영 모델로 승인",
+    description="needs_approval 인 후보 번들을 다시 검사한 뒤 새 버전으로 등록해 Production 으로 올리고, 이전 운영 버전은 보관합니다. "
+                "서빙 모델을 바로 교체하고, 이전 모델이 쌓은 감시 창과 연속 초과 횟수는 비웁니다.",
+    responses={
+        200: response_example("새 버전으로 적용", {"version": "v3", "previous": "v2", "run_id": "fa0ce48edc1a433480168687886c92c8"}),
+        404: response_example("학습 기록 없음", {"detail": "학습 기록을 찾을 수 없습니다."}),
+        409: response_example("승인 대기 후보가 아님", {"detail": _CONFLICT}),
+        422: response_example("후보 번들 검사 실패 (스케일러·입력 규격·추론)", {"detail": "후보 모델을 불러오지 못했습니다: ..."}),
+    })
 def approve(req: ApproveRequest):
     view = _models_view()
     gate = next((g for g in view["gates"] if g["run_id"] == req.run_id), None)
@@ -178,7 +210,14 @@ def approve(req: ApproveRequest):
     return {"version": version, "previous": view["production"], "run_id": req.run_id}
 
 
-@router.post("/rollback")
+@router.post("/rollback", summary="보관된 이전 버전으로 되돌림",
+    description="지정한 버전을 Production 으로 되돌리고 서빙 모델을 교체합니다. 이전 모델이 쌓은 감시 창과 연속 초과 횟수는 비웁니다.",
+    responses={
+        200: response_example("v2 → v1", {"version": "v1", "previous": "v2"}),
+        404: response_example("없는 버전", {"detail": "v9 버전이 없습니다."}),
+        409: response_example("이미 운영 중", {"detail": "v1은 이미 Production 입니다."}),
+        422: response_example("버전 형식 오류 또는 번들 검사 실패", {"detail": "v1 모델을 불러오지 못했습니다: ..."}),
+    })
 def rollback(req: RollbackRequest):
     number = req.version.strip().lstrip("vV")
     try:

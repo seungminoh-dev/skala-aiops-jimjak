@@ -28,6 +28,8 @@ app = FastAPI(
         {"name": "모델 상태", "description": "서빙 준비 여부와 실제 모델 버전"},
         {"name": "데이터", "description": "학습·재학습에 사용할 수하물 CSV"},
         {"name": "모니터링", "description": "드리프트 임계값과 최근 판정"},
+        {"name": "모델 관리", "description": "버전·배포 기준 기록, 승인 대기 후보 승인, 이전 버전 되돌림"},
+        {"name": "시나리오", "description": "대시보드가 드리프트 시나리오를 돌릴 때 쓰는 데이터 파일"},
         {"name": "로그", "description": "운영 로그와 예측 응답 지연"},
     ],
 )
