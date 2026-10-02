@@ -2,7 +2,7 @@
  * 서버 상태 → 화면이 쓰는 모양. 순수 함수라 실제 서버로 바꿔도 그대로 쓸 수 있다.
  */
 import { MIN_UPLOAD_ROWS } from '@/api/csv'
-import { flightsAt, nextPredictionAt } from '@/api/ops'
+import type { T103Row } from '@/api/lineData'
 import { SCENARIO_SPECS } from '@/api/scenarioData'
 import type {
   BatchRecord,
@@ -17,7 +17,7 @@ import type {
   VerdictInput,
 } from '@/api/types'
 import { csvColumns, lab as MOCK_LAB } from '@/design/mock'
-import { fmtDecimal } from '@/lib/format'
+import { addMinutes, fmtDecimal } from '@/lib/format'
 
 /** 배치 한 번 → verdictStatus 입력 (창이 덜 찼으면 판정 보류) */
 export function batchVerdictInput(b: BatchRecord, consecutiveLimit: number): VerdictInput {
@@ -96,19 +96,27 @@ export function buildMonitoringView(
   }
 }
 
-/** 다음 예측은 실시간 데모 시각 기준 (시각 지정과 상관없이 — 전환은 지금 일어나므로) */
+/**
+ * 다음 예측 = T1-03 편 중 예측 시점(도착 예정 1시간 전)이 아직 오지 않은 가장 이른 편.
+ * 실시간 데모 시각 기준 (시각 지정과 상관없이 — 운영 버전 전환은 지금 일어나므로)
+ */
 export function buildModelsView(
   models: ServerState['models'],
   gateMae: number,
   liveNow: ServerState['clock']['liveNow'],
+  rows: readonly T103Row[],
 ): ModelsView {
-  const next = nextPredictionAt(flightsAt(liveNow, models.history), liveNow)
+  const next =
+    rows
+      .map((r) => ({ at: addMinutes(r[3], -60), flightId: r[0] }))
+      .filter((f) => f.at >= liveNow)
+      .sort((a, b) => a.at.localeCompare(b.at))[0] ?? null
   return {
     production: models.production,
     versions: models.versions,
     gates: models.gates,
     gateMae,
-    nextPrediction: next ? { at: next.at, flightId: next.flightId } : null,
+    nextPrediction: next,
   }
 }
 

@@ -6,6 +6,7 @@
  */
 import { useMemo, useSyncExternalStore } from 'react'
 
+import { useLineRows } from '@/api/lineData'
 import * as server from '@/api/liveServer'
 import { buildLineDetail, computeOps } from '@/api/ops'
 import type {
@@ -98,7 +99,8 @@ export function useModels(): ModelsView {
   const models = useServer((s) => s.models)
   const gateMae = useServer((s) => s.monitor.gateMae)
   const liveNow = useServer((s) => s.clock.liveNow)
-  return useMemo(() => buildModelsView(models, gateMae, liveNow), [models, gateMae, liveNow])
+  const rows = useLineRows()
+  return useMemo(() => buildModelsView(models, gateMae, liveNow, rows), [models, gateMae, liveNow, rows])
 }
 
 /** 로그 (오래된 것 → 최신, 최신이 아래) */
