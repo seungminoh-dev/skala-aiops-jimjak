@@ -14,7 +14,9 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/logs")
 
-LOG_DIR = "logs"
+from serving_app.config import settings
+
+LOG_DIR = settings.log_dir
 
 
 @router.get("")

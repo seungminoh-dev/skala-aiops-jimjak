@@ -22,6 +22,6 @@ def health():
 
 
 def _current_loading_mode() -> str:
-    import os
+    from serving_app.config import settings
 
-    return os.getenv("LOADING_MODE", "lazy")
+    return settings.loading_mode

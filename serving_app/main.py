@@ -17,12 +17,13 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from serving_app import model_loader
+from serving_app.config import settings
 from serving_app.routers import data, health, logs, predict
 
 # monitoring/retrain_trigger.py가 쓰는 "aiops" 로거를 logs/aiops.log 파일에 연결한다.
 # (routers/logs.py가 같은 디렉토리를 읽기 전용으로 노출한다.) 여기서 이 로거 하나만
 # 직접 설정하므로, uvicorn 자체 로깅 설정과 충돌하지 않는다.
-_LOG_DIR = "logs"
+_LOG_DIR = settings.log_dir
 os.makedirs(_LOG_DIR, exist_ok=True)
 _aiops_logger = logging.getLogger("aiops")
 _aiops_logger.setLevel(logging.INFO)
@@ -46,7 +47,7 @@ app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")  # 
 @app.on_event("startup")
 def startup():
     # Day1 실습 포인트: LOADING_MODE=eager 로 켜고 서버 시작 시간을 lazy와 비교해보세요.
-    if os.getenv("LOADING_MODE", "lazy") == "eager":
+    if settings.loading_mode == "eager":
         model_loader.load_eager()
     else:
         print("[lazy] 모델은 첫 /predict 요청이 들어올 때 로드됩니다.")
